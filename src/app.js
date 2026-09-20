@@ -1,0 +1,367 @@
+// src/app.js — renderer-side logic.
+//
+// Responsibilities:
+//   1. Mirror the math-field's current value into the "TeX" source bar.
+//   2. Handle the two copy actions (LaTeX / PNG).
+//   3. Handle pin / minimize / close / clear / history / theme / opacity / font size.
+//   4. Keyboard shortcuts: Ctrl+Enter copy, Ctrl+Backspace/Esc clear,
+//      Alt+Up/Down history, Ctrl+-/= or Ctrl+scroll font size, Tab always
+//      stays inside the field.
+//
+// MathQuill is used instead of MathLive specifically to match Symbolab's
+// cursor behavior: the caret stays inside a superscript/subscript/fraction
+// until you press Tab or right-arrow past the end, rather than exiting after
+// one character. This is MathQuill's native default.
+
+// ---------------------------------------------------------------------------
+// Initialize MathQuill.
+//
+// spaceBehavesLikeTab keeps the caret inside the current structure (super-
+// script, fraction, etc.) until the user explicitly presses Tab or navigates
+// out — this is the Symbolab cursor feel the MathLive version lacked.
+// ---------------------------------------------------------------------------
+
+const MQ = MathQuill.getInterface(2);
+const mqEl = document.getElementById('mf');
+
+// ---------------------------------------------------------------------------
+// History — last 20 expressions, navigated with Alt+Up / Alt+Down.
+// ---------------------------------------------------------------------------
+
+const HISTORY_MAX = 20;
+
+function loadHistory() {
+  try { return JSON.parse(localStorage.getItem('history') || '[]'); }
+  catch { return []; }
+}
+
+function saveToHistory(latex) {
+  if (!latex.trim()) return;
+  const history = loadHistory();
+  if (history[0] === latex) return;   // don't duplicate consecutive entries
+  history.unshift(latex);
+  localStorage.setItem('history', JSON.stringify(history.slice(0, HISTORY_MAX)));
+}
+
+let historyIndex = -1;   // -1 = current unsaved draft
+let historyDraft = '';   // saved draft when user starts navigating
+let navigating   = false; // prevents edit handler from resetting historyIndex mid-navigate
+
+function navigateHistory(direction) {
+  const history = loadHistory();
+  if (history.length === 0) return;
+
+  if (direction === 'up') {
+    if (historyIndex === -1) historyDraft = mf.latex();
+    if (historyIndex < history.length - 1) historyIndex++;
+  } else {
+    if (historyIndex === -1) return;
+    historyIndex--;
+  }
+
+  navigating = true;
+  mf.latex(historyIndex === -1 ? historyDraft : history[historyIndex]);
+  navigating = false;
+  updateSource();
+}
+
+const mf = MQ.MathField(mqEl, {
+  spaceBehavesLikeTab: true,
+  // Without this, MathQuill lets a typed '|' close whatever bracket is
+  // currently open (since '|' is a valid closer for interval notation like
+  // "(0,1]"). That's what broke "ln(|y|)": the '|' after '(' was consumed as
+  // the paren's closer instead of opening its own abs-value pair. Restricting
+  // mismatched brackets makes '|' only pair with another '|'.
+  restrictMismatchedBrackets: true,
+  autoCommands: 'pi theta phi alpha beta gamma delta epsilon zeta eta iota kappa lambda mu nu xi rho sigma tau upsilon chi psi omega infty sqrt',
+  autoOperatorNames: 'sin cos tan cot sec csc sinh cosh tanh arcsin arccos arctan log ln det lim',
+  handlers: {
+    edit: () => {
+      if (!navigating) historyIndex = -1;
+      updateSource();
+    }
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Mirror the math-field value into the TeX source bar.
+// ---------------------------------------------------------------------------
+
+const sourceOut = document.getElementById('source-out');
+
+function updateSource() {
+  sourceOut.textContent = mf.latex() || '';
+}
+
+// ---------------------------------------------------------------------------
+// Copy actions.
+// ---------------------------------------------------------------------------
+
+const statusEl = document.getElementById('status');
+let statusTimer = null;
+
+function flashStatus(msg, type = 'success') {
+  statusEl.textContent = msg;
+  statusEl.classList.remove('is-success', 'is-error');
+  statusEl.classList.add('is-visible', type === 'error' ? 'is-error' : 'is-success');
+  clearTimeout(statusTimer);
+  statusTimer = setTimeout(() => statusEl.classList.remove('is-visible'), 1400);
+}
+
+async function copyLatex() {
+  const latex = mf.latex() || '';
+  if (!latex.trim()) return flashStatus('empty — nothing to copy', 'error');
+  await window.floater.copyText(latex);
+  saveToHistory(latex);
+  flashStatus(`copied LaTeX (${latex.length} chars)`);
+}
+
+// PNG export: rendered entirely off-screen (see src/capture.html/js and the
+// png:render handler in main.js) so a wide or tall expression never has to
+// resize the real, visible app window — the invisible capture window grows
+// or shrinks to fit instead. Also sidesteps needing to flip this window's
+// theme colors, since the capture page is always white-background/dark-text.
+async function copyPng() {
+  const latex = mf.latex() || '';
+  if (!latex.trim()) return flashStatus('empty — nothing to copy', 'error');
+  try {
+    const dataUrl = await window.floater.renderPng(latex, fontSize);
+    const ok = await window.floater.copyImage(dataUrl);
+    flashStatus(ok ? 'copied PNG' : 'PNG copy failed', ok ? 'success' : 'error');
+  } catch (e) {
+    console.error(e);
+    flashStatus('PNG export failed', 'error');
+  }
+}
+
+document.getElementById('copy-latex').addEventListener('click', copyLatex);
+document.getElementById('copy-png').addEventListener('click', copyPng);
+
+// ---------------------------------------------------------------------------
+// Window chrome buttons.
+// ---------------------------------------------------------------------------
+
+const pinBtn = document.getElementById('btn-pin');
+
+function applyPinState(isPinned) {
+  pinBtn.classList.toggle('is-active', isPinned);
+  pinBtn.title = isPinned ? 'Unpin (always on top: ON)' : 'Pin (always on top: OFF)';
+}
+
+pinBtn.addEventListener('click', async () => {
+  applyPinState(await window.floater.togglePin());
+});
+
+// The button used to be hardcoded "active" in the HTML regardless of the
+// real state, which is restored from last session's settings on launch —
+// so it could show pinned when the window actually wasn't (and vice versa),
+// making the pin button look like it did the opposite of what you clicked.
+window.floater.getPinState().then(applyPinState);
+
+document.getElementById('btn-minimize').addEventListener('click', () => window.floater.minimize());
+document.getElementById('btn-close').addEventListener('click', () => window.floater.close());
+
+// Clear button + Esc shortcut. Auto-copies current expression before clearing.
+const clearField = async () => {
+  const latex = mf.latex() || '';
+  if (latex.trim()) {
+    await window.floater.copyText(latex);
+    saveToHistory(latex);
+    flashStatus('copied & cleared');
+  }
+  mf.latex('');
+  updateSource();
+  mf.focus();
+};
+document.getElementById('btn-clear').addEventListener('click', clearField);
+
+// ---------------------------------------------------------------------------
+// Shorthand substitution.
+//
+// When the user types a word from this map and then presses Space, we delete
+// the typed letters and replace them with the LaTeX symbol. This runs in the
+// capture phase so we intercept Space before MathQuill does — necessary because
+// spaceBehavesLikeTab would otherwise consume the Space before autoCommands
+// gets a chance to fire.
+// ---------------------------------------------------------------------------
+
+const SHORTHANDS = {
+  // Custom (no matching LaTeX command name)
+  'inf':     '\\infty',
+  // Greek lowercase
+  'alpha':   '\\alpha',   'beta':    '\\beta',    'gamma':   '\\gamma',
+  'delta':   '\\delta',   'epsilon': '\\epsilon', 'zeta':    '\\zeta',
+  'eta':     '\\eta',     'theta':   '\\theta',   'iota':    '\\iota',
+  'kappa':   '\\kappa',   'lambda':  '\\lambda',  'mu':      '\\mu',
+  'nu':      '\\nu',      'xi':      '\\xi',      'pi':      '\\pi',
+  'rho':     '\\rho',     'sigma':   '\\sigma',   'tau':     '\\tau',
+  'upsilon': '\\upsilon', 'phi':     '\\phi',     'chi':     '\\chi',
+  'psi':     '\\psi',     'omega':   '\\omega',
+  // Greek uppercase
+  'Gamma':   '\\Gamma',   'Delta':   '\\Delta',   'Theta':   '\\Theta',
+  'Lambda':  '\\Lambda',  'Xi':      '\\Xi',      'Pi':      '\\Pi',
+  'Sigma':   '\\Sigma',   'Upsilon': '\\Upsilon', 'Phi':     '\\Phi',
+  'Psi':     '\\Psi',     'Omega':   '\\Omega',
+};
+
+let letterBuffer = '';
+
+// ---------------------------------------------------------------------------
+// Keyboard shortcuts + shorthand detection (capture phase).
+//   Ctrl+Enter → Copy LaTeX
+//   Esc        → Clear field
+//   Space      → Substitute shorthand if buffer matches, otherwise pass through
+// ---------------------------------------------------------------------------
+
+document.addEventListener('keydown', (e) => {
+  // Global shortcuts first. Use Cmd on Mac, Ctrl on Windows/Linux.
+  const mod = e.ctrlKey || e.metaKey;
+  if (mod && e.key === 'Enter')        { e.preventDefault(); copyLatex(); return; }
+  if (mod && e.key === 'c') {
+    // If MathQuill has an active selection, let it handle Ctrl+C natively so
+    // only the highlighted portion is copied. If nothing is selected, capture
+    // the event ourselves and copy the entire expression.
+    const hasSel = !!(mf.__controller && mf.__controller.cursor.selection);
+    if (!hasSel) { e.preventDefault(); e.stopPropagation(); copyLatex(); }
+    return;
+  }
+  if (e.key === 'Escape')              { e.preventDefault(); clearField(); return; }
+  if (e.altKey && e.key === 'ArrowUp')   { e.preventDefault(); navigateHistory('up');   return; }
+  if (e.altKey && e.key === 'ArrowDown') { e.preventDefault(); navigateHistory('down'); return; }
+
+  // Ctrl+Backspace used to fall through to MathQuill's default handling,
+  // which just deletes one character like a plain Backspace. Route it to the
+  // same "wipe the whole expression" behavior as Esc.
+  if (mod && e.key === 'Backspace') { e.preventDefault(); clearField(); return; }
+
+  // Mirror the A-/A+ buttons so font size can be scaled from the keyboard too.
+  if (mod && (e.key === '-' || e.key === '_')) { e.preventDefault(); decreaseFontSize(); return; }
+  if (mod && (e.key === '=' || e.key === '+')) { e.preventDefault(); increaseFontSize(); return; }
+
+  // MathQuill treats Tab as "leave the current block" (e.g. numerator ->
+  // denominator); once there's nowhere left to go, it stops handling the key
+  // and the browser's default tab-to-next-focusable-element kicks in,
+  // sending focus to whatever's next in the DOM (the clear button). Keep Tab
+  // scoped to the math field always by feeding it to MathQuill as a no-op
+  // when there's nothing to navigate to, instead of letting it escape.
+  if (!mod && !e.altKey && e.key === 'Tab') {
+    e.preventDefault();
+    mf.keystroke(e.shiftKey ? 'Shift-Tab' : 'Tab');
+    return;
+  }
+
+  // Track letters typed into the field to detect shorthands.
+  if (!e.ctrlKey && !e.metaKey && !e.altKey) {
+    if (e.key.length === 1 && /[a-zA-Z]/.test(e.key)) {
+      letterBuffer += e.key;
+    } else if (e.key === ' ') {
+      const cmd = SHORTHANDS[letterBuffer];
+      if (cmd) {
+        e.preventDefault();
+        e.stopPropagation();
+        for (let i = 0; i < letterBuffer.length; i++) mf.keystroke('Backspace');
+        mf.cmd(cmd);
+        updateSource();
+      }
+      letterBuffer = '';
+    } else {
+      // Any non-letter, non-space key (^, _, +, Backspace, Tab…) resets the buffer.
+      letterBuffer = e.key === 'Backspace' ? letterBuffer.slice(0, -1) : '';
+    }
+  }
+}, true); // capture phase — fires before MathQuill's internal handlers
+
+// Ctrl+scroll also scales the font, mirroring the A-/A+ buttons and the
+// Ctrl+-/Ctrl+= shortcuts above. Must be non-passive so we can stop the
+// browser's own page-zoom gesture from firing instead.
+document.addEventListener('wheel', (e) => {
+  if (!(e.ctrlKey || e.metaKey)) return;
+  e.preventDefault();
+  if (e.deltaY < 0) increaseFontSize(); else decreaseFontSize();
+}, { passive: false });
+
+// ---------------------------------------------------------------------------
+// Light / dark theme toggle.
+// ---------------------------------------------------------------------------
+
+const iconSun  = document.getElementById('icon-sun');
+const iconMoon = document.getElementById('icon-moon');
+
+function applyTheme(theme) {
+  document.documentElement.setAttribute('data-theme', theme);
+  const isLight = theme === 'light';
+  iconSun.style.display  = isLight ? 'none'  : '';
+  iconMoon.style.display = isLight ? ''      : 'none';
+  localStorage.setItem('theme', theme);
+}
+
+applyTheme(localStorage.getItem('theme') || 'dark');
+
+document.getElementById('btn-theme').addEventListener('click', () => {
+  const next = document.documentElement.getAttribute('data-theme') === 'light' ? 'dark' : 'light';
+  applyTheme(next);
+  mf.focus();
+});
+
+// Click the TeX source bar to copy LaTeX instantly.
+document.querySelector('.source').addEventListener('click', async () => {
+  const latex = mf.latex() || '';
+  if (!latex.trim()) return flashStatus('empty — nothing to copy', 'error');
+  await window.floater.copyText(latex);
+  saveToHistory(latex);
+  flashStatus('copied LaTeX');
+});
+
+// ---------------------------------------------------------------------------
+// Opacity slider.
+// ---------------------------------------------------------------------------
+
+const opacitySlider = document.getElementById('opacity-slider');
+opacitySlider.value = Math.round((parseFloat(localStorage.getItem('opacity') || '1')) * 100);
+
+opacitySlider.addEventListener('input', () => {
+  const value = opacitySlider.value / 100;
+  window.floater.setOpacity(value);
+  localStorage.setItem('opacity', value);
+});
+
+// ---------------------------------------------------------------------------
+// Font size controls.
+// ---------------------------------------------------------------------------
+
+const FONT_MIN = 12;
+const FONT_MAX = 48;
+const FONT_STEP = 2;
+const FONT_DEFAULT = 18;
+
+let fontSize = parseInt(localStorage.getItem('fontSize') || FONT_DEFAULT, 10);
+
+function applyFontSize() {
+  mqEl.style.fontSize = fontSize + 'px';
+  localStorage.setItem('fontSize', fontSize);
+}
+
+// Shared by the A-/A+ buttons, the Ctrl+-/Ctrl+= shortcuts, and Ctrl+scroll.
+function increaseFontSize() {
+  if (fontSize < FONT_MAX) { fontSize += FONT_STEP; applyFontSize(); }
+  mf.focus();
+}
+function decreaseFontSize() {
+  if (fontSize > FONT_MIN) { fontSize -= FONT_STEP; applyFontSize(); }
+  mf.focus();
+}
+
+document.getElementById('btn-font-inc').addEventListener('click', increaseFontSize);
+document.getElementById('btn-font-dec').addEventListener('click', decreaseFontSize);
+
+// ---------------------------------------------------------------------------
+// Boot.
+// ---------------------------------------------------------------------------
+
+applyFontSize();
+window.floater.setOpacity(parseFloat(localStorage.getItem('opacity') || '1'));
+updateSource();
+setTimeout(() => mf.focus(), 50);
+
+// Re-focus the math field whenever the app window comes back into focus.
+window.floater.onFocus(() => mf.focus());

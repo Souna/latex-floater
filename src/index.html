@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>LaTeX Floater</title>
+
+  <!-- IBM Plex gives us a characterful sans + mono pair without going generic.
+       Mono is used for the "LaTeX source" readout; sans for everything else.
+       The @font-face rules (self-hosted, src/fonts/) live in styles.css —
+       see the comment there for why this isn't loaded from Google Fonts. -->
+  <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="../node_modules/mathquill/build/mathquill.css">
+</head>
+<body>
+  <!-- =================================================================
+       Title bar. The drag region spans the top and lets the user move
+       the window. Buttons are marked no-drag so clicks register.
+       ================================================================= -->
+  <header class="titlebar">
+    <div class="titlebar__brand">
+      <span class="titlebar__dot" aria-hidden="true"></span>
+      <span class="titlebar__name">LaTeX Floater</span>
+    </div>
+    <div class="titlebar__controls">
+      <button id="btn-theme" class="titlebar__btn" title="Toggle light/dark theme">
+        <!-- sun icon (shown in dark mode to switch to light) -->
+        <svg id="icon-sun" viewBox="0 0 16 16" width="12" height="12" fill="currentColor" aria-hidden="true">
+          <circle cx="8" cy="8" r="3"/>
+          <path d="M8 1v2M8 13v2M1 8h2M13 8h2M3.22 3.22l1.42 1.42M11.36 11.36l1.42 1.42M3.22 12.78l1.42-1.42M11.36 4.64l1.42-1.42" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+        </svg>
+        <!-- moon icon (shown in light mode to switch to dark) -->
+        <svg id="icon-moon" viewBox="0 0 16 16" width="12" height="12" fill="currentColor" aria-hidden="true" style="display:none">
+          <path d="M6 2a6 6 0 1 0 8 8 4.5 4.5 0 0 1-8-8z"/>
+        </svg>
+      </button>
+      <input  id="opacity-slider" class="titlebar__opacity" type="range" min="20" max="100" value="100" step="5" title="Window opacity">
+      <button id="btn-font-dec" class="titlebar__btn titlebar__btn--font" title="Decrease font size">A−</button>
+      <button id="btn-font-inc" class="titlebar__btn titlebar__btn--font" title="Increase font size">A+</button>
+      <button id="btn-pin"      class="titlebar__btn titlebar__btn--pin" title="Toggle always-on-top">
+        <!-- pin icon -->
+        <svg viewBox="0 0 16 16" width="12" height="12" fill="currentColor" aria-hidden="true">
+          <path d="M9.828 1.172a1 1 0 0 0-1.414 0L6.586 3H4a1 1 0 0 0-.707 1.707L6 7.414V11l-2.707 2.707A1 1 0 0 0 4 15.414h8a1 1 0 0 0 .707-1.707L10 11V7.414l2.707-2.707A1 1 0 0 0 12 3H9.414L7.586 1.172a1 1 0 0 0-1.414 0z"/>
+        </svg>
+      </button>
+      <button id="btn-minimize" class="titlebar__btn" title="Minimize">
+        <svg viewBox="0 0 12 12" width="10" height="10" fill="currentColor" aria-hidden="true"><rect x="2" y="5.5" width="8" height="1"/></svg>
+      </button>
+      <button id="btn-close"    class="titlebar__btn titlebar__btn--close" title="Close">
+        <svg viewBox="0 0 12 12" width="10" height="10" fill="currentColor" aria-hidden="true"><path d="M3 3l6 6M9 3l-6 6" stroke="currentColor" stroke-width="1.4"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <!-- =================================================================
+       The math field. MathQuill turns this span into a WYSIWYG-math
+       editor that behaves exactly like Symbolab's input.
+       ================================================================= -->
+  <section class="editor">
+    <span id="mf" class="editor__field"></span>
+    <button id="btn-clear" class="editor__clear" title="Clear (Esc)">
+      <svg viewBox="0 0 16 16" width="12" height="12" fill="currentColor" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+    </button>
+  </section>
+
+  <!-- =================================================================
+       LaTeX source readout — plain text mirror of the math field so the
+       user can see exactly what they'll paste. Read-only.
+       ================================================================= -->
+  <section class="source">
+    <span class="source__label">TeX</span>
+    <code id="source-out" class="source__code"></code>
+  </section>
+
+  <!-- =================================================================
+       Action row. Copy LaTeX is primary; MathML and PNG are secondary.
+       ================================================================= -->
+  <footer class="actions">
+    <button id="copy-latex"  class="btn btn--primary">Copy LaTeX</button>
+<button id="copy-png"    class="btn">PNG</button>
+    <div class="actions__status" id="status" aria-live="polite"></div>
+  </footer>
+
+  <script src="../node_modules/jquery/dist/jquery.min.js"></script>
+  <script src="../node_modules/mathquill/build/mathquill.min.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

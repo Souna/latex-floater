@@ -1,0 +1,359 @@
+/* styles.css — LaTeX Floater
+ *
+ * Design brief: dense desktop utility, character but not flashy.
+ * Accent is a warm amber — distinctive without screaming.
+ * Dark theme is default; light theme applied via [data-theme="light"] on <html>.
+ */
+
+/* IBM Plex, self-hosted (fonts/), not loaded from Google Fonts. index.html
+ * used to link fonts.googleapis.com directly, and since that <link> sat in
+ * <head> before this app's <script> tags, a slow or unreachable DNS/network
+ * path to Google's CDN delayed MathQuill's init — and therefore the math
+ * field becoming usable — by however long that request took to resolve or
+ * time out. For an always-on-top utility meant to be instantly available,
+ * that's a real bug, not just a cosmetic one; bundling the three actual font
+ * files removes the network dependency entirely. IBMPlexSans-Variable.woff2
+ * is one variable-font file covering weights 400/500/600 — that's exactly
+ * what Google's own font CSS served for this weight range too, not a
+ * shortcut taken here. */
+@font-face {
+  font-family: 'IBM Plex Mono';
+  font-weight: 400;
+  font-display: swap;
+  src: url('fonts/IBMPlexMono-Regular.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'IBM Plex Mono';
+  font-weight: 500;
+  font-display: swap;
+  src: url('fonts/IBMPlexMono-Medium.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'IBM Plex Sans';
+  font-weight: 400;
+  font-display: swap;
+  src: url('fonts/IBMPlexSans-Variable.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'IBM Plex Sans';
+  font-weight: 500;
+  font-display: swap;
+  src: url('fonts/IBMPlexSans-Variable.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'IBM Plex Sans';
+  font-weight: 600;
+  font-display: swap;
+  src: url('fonts/IBMPlexSans-Variable.woff2') format('woff2');
+}
+
+:root {
+  --bg:          #12131a;
+  --bg-raise:    #1a1c25;
+  --bg-hover:    #232532;
+  --bg-sink:     #0d0e14;
+  --bg-bar:      #0f1016;   /* titlebar and footer */
+  --border:      #272935;
+  --border-strong: #363949;
+  --fg:          #e4e6ee;
+  --fg-dim:      #8b8fa3;
+  --fg-faint:    #5a5e72;
+  --accent:      #d4a45c;
+  --accent-soft: rgba(212, 164, 92, 0.14);
+  --accent-hover: #e0b472;
+  --danger:      #e06c75;
+  --danger-bg:   #3d2327;
+  --success:     #98c379;
+  --radius:      6px;
+  --radius-sm:   4px;
+}
+
+[data-theme="light"] {
+  --bg:          #f4f2ed;
+  --bg-raise:    #ffffff;
+  --bg-hover:    #e8e5de;
+  --bg-sink:     #ece9e2;
+  --bg-bar:      #e2dfd8;
+  --border:      #ccc9c0;
+  --border-strong: #b0ada4;
+  --fg:          #1c1b18;
+  --fg-dim:      #6a6760;
+  --fg-faint:    #9a9790;
+  --accent:      #a86e24;   /* darker amber for legibility on light bg */
+  --accent-soft: rgba(168, 110, 36, 0.12);
+  --accent-hover: #c07f2a;
+  --danger:      #c0392b;
+  --danger-bg:   #fde8e6;
+  --success:     #27ae60;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  overflow: hidden;
+  font-family: 'IBM Plex Sans', system-ui, sans-serif;
+  font-size: 13px;
+  color: var(--fg);
+  background: var(--bg);
+  background-image: linear-gradient(180deg, var(--bg) 0%, var(--bg-sink) 100%);
+  -webkit-font-smoothing: antialiased;
+  transition: background 0.15s, color 0.15s;
+}
+
+body {
+  display: flex;
+  flex-direction: column;
+  user-select: none;
+}
+
+/* =========================================================================
+   Titlebar
+   ========================================================================= */
+
+.titlebar {
+  -webkit-app-region: drag;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 30px;
+  padding: 0 6px 0 12px;
+  background: var(--bg-bar);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.titlebar__brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--fg-dim);
+  font-weight: 500;
+}
+
+.titlebar__dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 6px var(--accent-soft);
+}
+
+.titlebar__controls {
+  display: flex;
+  gap: 2px;
+  align-items: center;
+  -webkit-app-region: no-drag;
+}
+
+.titlebar__btn {
+  width: 24px;
+  height: 24px;
+  border: none;
+  background: transparent;
+  color: var(--fg-faint);
+  border-radius: var(--radius-sm);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background-color 0.12s, color 0.12s;
+}
+.titlebar__btn:hover         { background: var(--bg-hover); color: var(--fg); }
+.titlebar__btn--close:hover  { background: var(--danger-bg); color: var(--danger); }
+.titlebar__btn--pin.is-active { color: var(--accent); }
+.titlebar__btn--font { width: auto; padding: 0 5px; font-size: 10px; font-family: inherit; }
+
+.titlebar__opacity {
+  -webkit-app-region: no-drag;
+  width: 56px;
+  height: 3px;
+  accent-color: var(--accent);
+  cursor: pointer;
+  opacity: 0.5;
+  transition: opacity 0.15s;
+  align-self: center;
+}
+.titlebar__opacity:hover { opacity: 1; }
+
+/* =========================================================================
+   Math editor
+   ========================================================================= */
+
+.editor {
+  position: relative;
+  flex: 1;
+  min-height: 60px;
+  padding: 10px 36px 10px 12px;
+  background: var(--bg);
+  display: flex;
+  align-items: center;
+  user-select: text;
+  transition: background 0.15s;
+}
+
+.editor__field {
+  flex: 1;
+  width: 100%;
+  min-height: 40px;
+  font-size: 18px;
+  color: var(--fg);
+  background: transparent;
+  cursor: text;
+  display: flex;
+  align-items: center;
+}
+
+.editor__field .mq-editable-field {
+  border: none !important;
+  box-shadow: none !important;
+  background: transparent !important;
+  color: var(--fg) !important;
+  width: 100%;
+  min-height: 40px;
+  display: flex;
+  align-items: center;
+  padding: 0 !important;
+}
+
+.editor__field .mq-editable-field:focus {
+  box-shadow: none !important;
+  outline: none !important;
+}
+
+.editor__field .mq-cursor {
+  border-color: var(--accent) !important;
+}
+
+.editor__field .mq-selection .mq-non-leaf,
+.editor__field .mq-selection .mq-leaf {
+  background: var(--accent-soft) !important;
+  color: var(--fg) !important;
+}
+
+/* MathQuill renders math symbols in the inherited color. Force it to follow
+   the theme so fractions, roots, etc. are legible in both light and dark. */
+.editor__field .mq-root-block,
+.editor__field .mq-root-block * {
+  color: var(--fg) !important;
+}
+
+.editor__clear {
+  position: absolute;
+  right: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 22px;
+  height: 22px;
+  border: none;
+  background: transparent;
+  color: var(--fg-faint);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background-color 0.12s, color 0.12s;
+}
+.editor__clear:hover { background: var(--bg-hover); color: var(--danger); }
+
+/* =========================================================================
+   LaTeX source readout
+   ========================================================================= */
+
+.source {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--bg-sink);
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+  padding: 6px 12px;
+  min-height: 26px;
+  flex-shrink: 0;
+  user-select: text;
+  cursor: pointer;
+  transition: background 0.12s;
+}
+.source:hover { background: var(--bg-raise); }
+
+.source__label {
+  font-size: 9px;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  color: var(--accent);
+  font-weight: 600;
+  flex-shrink: 0;
+}
+
+.source__code {
+  font-family: 'IBM Plex Mono', ui-monospace, monospace;
+  font-size: 11.5px;
+  color: var(--fg-dim);
+  white-space: nowrap;
+  overflow-x: auto;
+  scrollbar-width: none;
+  flex: 1;
+}
+.source__code::-webkit-scrollbar { display: none; }
+.source__code:empty::before {
+  content: "empty";
+  color: var(--fg-faint);
+  font-style: italic;
+}
+
+/* =========================================================================
+   Actions footer
+   ========================================================================= */
+
+.actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  background: var(--bg-bar);
+  border-top: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.btn {
+  background: var(--bg-raise);
+  border: 1px solid var(--border-strong);
+  color: var(--fg);
+  font-family: inherit;
+  font-size: 11.5px;
+  font-weight: 500;
+  padding: 6px 12px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: background-color 0.12s, border-color 0.12s, color 0.12s;
+}
+.btn:hover  { background: var(--bg-hover); border-color: var(--fg-faint); }
+.btn:active { transform: translateY(1px); }
+
+.btn--primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #1a1308;
+  font-weight: 600;
+}
+.btn--primary:hover {
+  background: var(--accent-hover);
+  border-color: var(--accent-hover);
+}
+
+.actions__status {
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--fg-faint);
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+.actions__status.is-visible { opacity: 1; }
+.actions__status.is-success { color: var(--success); }
+.actions__status.is-error   { color: var(--danger); }

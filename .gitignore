@@ -1,0 +1,12 @@
+# Regenerable: `npm install` and `npm run pack` / `dist:win` / `dist:mac`.
+# Also platform-specific, so useless to share between the Windows and Mac machines.
+node_modules/
+dist/
+
+# Per-machine Claude Code settings.
+.claude/settings.local.json
+
+# Machine-specific helper with hardcoded local paths.
+create-shortcut.ps1
+
+.DS_Store
