@@ -366,43 +366,64 @@ document.addEventListener('wheel', (e) => {
 // ---------------------------------------------------------------------------
 // Grapher panel.
 //
-// The Graph button toggles the panel, which sits below the field in place of
-// the centring spacer, so the field moves up to make room. The panel needs
-// real height to be useful and the default window is short, so opening it
-// grows the window by whatever the editor area is missing, and closing it
-// gives that back. The amount grown is remembered in localStorage alongside
-// the open state, so a relaunch that restores the (taller) window with the
-// graph open still knows how much to shrink on close. graph.js owns
-// everything inside the panel; this is just the plumbing around it.
+// The graph's bar sits under the field permanently; its chevron expands the
+// plot below it. Collapsed, the field and bar sit at the bottom of the
+// editor area with the history above; expanded, the plot and the history
+// share the space equally, so the field moves up to the centre. The plot
+// needs real height to be useful (and so, by symmetry, does the history
+// above it) and the default window is short, so expanding grows the window
+// by whatever the editor area is missing, and collapsing gives that back. The amount grown
+// is remembered in localStorage alongside the open state, so a relaunch
+// that restores the (taller) window with the graph open still knows how
+// much to shrink on collapse. graph.js owns everything inside the panel;
+// this is just the plumbing around it.
 // ---------------------------------------------------------------------------
 
-const GRAPH_HEIGHT = 240;   // must match --graph-height in styles.css
-const GRAPH_ROOM = 90;      // px of history to keep visible above the field
+const GRAPH_HEIGHT = 220;   // must match --graph-height in styles.css
 
-const btnGraph   = document.getElementById('btn-graph');
-const graphPanel = document.getElementById('graph');
-const editorEl   = document.querySelector('.editor');
-const editorRow  = document.querySelector('.editor__row');
-const belowEl    = document.getElementById('editor-below');
+const graphPanel  = document.getElementById('graph');
+const graphWrap   = document.getElementById('graph-canvas-wrap');
+const graphToggle = document.getElementById('graph-toggle');
+const graphReset  = document.getElementById('graph-reset');
+const graphStatus = document.getElementById('graph-status');
+const editorEl    = document.querySelector('.editor');
+const editorRow   = document.querySelector('.editor__row');
 
 let graphOpen  = localStorage.getItem('graphOpen') === 'true';
 let graphGrown = parseInt(localStorage.getItem('graphGrown') || '0', 10) || 0;
 
+// Everything visual about expanded vs collapsed, with no window resizing.
+function applyGraphLayout(open) {
+  graphPanel.classList.toggle('is-collapsed', !open);
+  graphWrap.hidden = !open;
+  graphReset.hidden = !open;
+  graphToggle.title = open ? 'Collapse graph' : 'Expand graph';
+  if (!open) graphStatus.textContent = 'Graph';
+  graphStatus.classList.toggle('is-error', false);
+}
+
+// Grows the window until the editor area can hold the plot at its minimum
+// height plus an equal-height history box above the field. Normally runs
+// once, when the graph is first expanded; it also runs at boot when the
+// graph was left open, which is a no-op when the window-state plugin has
+// restored the grown window, and a rescue when it hasn't (a crash, or the
+// app killed before the plugin could save).
+async function ensureGraphRoom() {
+  const available = editorEl.clientHeight - editorRow.offsetHeight - 16 - 8;
+  const need = 2 * GRAPH_HEIGHT - available;
+  if (need <= 0) return;
+  graphGrown += need;
+  localStorage.setItem('graphGrown', graphGrown);
+  await window.floater.resizeBy(need);
+}
+
 async function setGraphOpen(open) {
   graphOpen = open;
   localStorage.setItem('graphOpen', open);
-  btnGraph.classList.toggle('is-active', open);
-  graphPanel.hidden = !open;
-  belowEl.hidden = open;
+  applyGraphLayout(open);
 
   if (open) {
-    const available = editorEl.clientHeight - editorRow.offsetHeight - 16;
-    const need = GRAPH_HEIGHT + 8 + GRAPH_ROOM - available;
-    if (need > 0 && graphGrown === 0) {
-      graphGrown = need;
-      localStorage.setItem('graphGrown', graphGrown);
-      await window.floater.resizeBy(need);
-    }
+    await ensureGraphRoom();
     window.Grapher.refresh();
     window.Grapher.setLatex(mf.latex() || '');
   } else if (graphGrown > 0) {
@@ -414,8 +435,7 @@ async function setGraphOpen(open) {
   mf.focus();
 }
 
-btnGraph.addEventListener('click', () => setGraphOpen(!graphOpen));
-document.getElementById('graph-collapse').addEventListener('click', () => setGraphOpen(false));
+graphToggle.addEventListener('click', () => setGraphOpen(!graphOpen));
 
 // ---------------------------------------------------------------------------
 // Light / dark theme toggle.
@@ -503,15 +523,15 @@ applyFontSize();
 renderHistory();
 window.floater.setOpacity(parseFloat(localStorage.getItem('opacity') || '1'));
 updateSource();
-// Restore the panel without re-growing: the window-state plugin already
-// brings back the taller window, and graphGrown remembers what to give
-// back on close.
+// Restore the panel. The window-state plugin normally brings back the
+// taller window, so ensureGraphRoom() finds nothing to do; graphGrown
+// remembers what to give back on collapse either way.
+applyGraphLayout(graphOpen);
 if (graphOpen) {
-  btnGraph.classList.add('is-active');
-  graphPanel.hidden = false;
-  belowEl.hidden = true;
-  window.Grapher.refresh();
-  window.Grapher.setLatex(mf.latex() || '');
+  ensureGraphRoom().then(() => {
+    window.Grapher.refresh();
+    window.Grapher.setLatex(mf.latex() || '');
+  });
 }
 setTimeout(() => mf.focus(), 50);
 

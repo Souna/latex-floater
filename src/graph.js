@@ -26,8 +26,16 @@
 // x² at the origin, sign changes of the finite-difference slope refined by
 // golden-section search give maxima and minima, f(0) gives the y-intercept.
 // Implicit curves get their axis intercepts via the same 1-D machinery along
-// each axis; extrema and self-intersections of implicit curves are not
-// attempted (see CLAUDE.md, "Open threads").
+// each axis, and their other features from the marching-squares output
+// itself: the segments are chained into polylines, whose local extremes in
+// x and y are candidates for leftmost/rightmost/highest/lowest points, and
+// whose loose ends (plus "saddle" cells where two segments cross a cell)
+// are candidates for self-intersections. Each candidate is then polished
+// with a 2-D Newton iteration — on {F = 0, ∂F/∂x = 0} for a horizontal
+// tangent, {F = 0, ∂F/∂y = 0} for a vertical one, {∂F/∂x = 0, ∂F/∂y = 0}
+// for a crossing — and kept only if it converges nearby and actually lies
+// on the curve, which is what separates a true crossing from two branches
+// merely passing close together.
 
 (function () {
   'use strict';
@@ -52,6 +60,7 @@
   let errorText = '';
   let points = [];        // [{ x, y, kind }]
   let hover = null;       // { x, y, kind } | null
+  let implicit = null;    // { segs, saddles } from the last marching-squares pass
   let width = 0, height = 0, dpr = 1;
   let frame = 0;
   let pendingLatex = null, latexTimer = 0;
@@ -113,12 +122,13 @@
   // ------------------------------------------------------------ drawing
 
   function draw() {
-    if (panel.hidden || width === 0) return;
+    if (wrap.hidden || width === 0) return;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.fillStyle = css('--bg-sink');
     ctx.fillRect(0, 0, width, height);
     drawGrid();
     if (curve) {
+      implicit = curve.kind === 'implicit' ? marchingSquares() : null;
       findPoints();
       drawCurve();
       drawPoints();
@@ -187,7 +197,7 @@
     ctx.beginPath();
     if (curve.kind === 'y') tracePath((px) => { const x = fromPx(px, 0)[0]; return [px, toPx(0, curve.f(x))[1]]; }, width);
     else if (curve.kind === 'x') tracePath((py) => { const y = fromPx(0, py)[1]; return [toPx(curve.f(y), 0)[0], py]; }, height);
-    else marchingSquares();
+    else for (const s of implicit.segs) { ctx.moveTo(s[0], s[1]); ctx.lineTo(s[2], s[3]); }
     ctx.stroke();
   }
 
@@ -208,7 +218,11 @@
     }
   }
 
+  // Returns the curve as pixel-space segments [x0, y0, x1, y1], plus the
+  // centres of "saddle" cells (all four corner signs alternating), which
+  // are where two branches cross a single cell.
   function marchingSquares() {
+    const segs = [], saddles = [];
     const cols = Math.ceil(width / CELL) + 1, rows = Math.ceil(height / CELL) + 1;
     const vals = new Float64Array(cols * rows);
     for (let r = 0; r < rows; r++) {
@@ -230,7 +244,8 @@
         const bottom = [lerp(x0, x1, bl, br), y1];
         const left   = [x0, lerp(y0, y1, tl, bl)];
         const right  = [x1, lerp(y0, y1, tr, br)];
-        const seg = (a, b) => { ctx.moveTo(a[0], a[1]); ctx.lineTo(b[0], b[1]); };
+        const seg = (a, b) => segs.push([a[0], a[1], b[0], b[1]]);
+        if (idx === 5 || idx === 10) saddles.push([(x0 + x1) / 2, (y0 + y1) / 2]);
         switch (idx) {
           case 1: case 14: seg(left, bottom); break;
           case 2: case 13: seg(bottom, right); break;
@@ -243,6 +258,7 @@
         }
       }
     }
+    return { segs, saddles };
   }
 
   function drawPoints() {
@@ -274,9 +290,9 @@
     const found = [];
     // Numerical refinement lands within ~1e-8 of a flat minimum's true x
     // (the limit of resolving f differences in double precision), so a
-    // coordinate that is negligible at the current zoom is snapped to 0
-    // rather than shown as 1.05e-8.
-    const tol = Math.max(x1 - x0, y1 - y0) * 1e-7;
+    // coordinate that is smaller than a thousandth of a pixel at the current
+    // zoom is snapped to 0 rather than shown as 1.05e-8.
+    const tol = Math.max(x1 - x0, y1 - y0) / Math.max(width, height) * 1e-3;   // a thousandth of a pixel
     const push = (x, y, kind) => {
       if (!Number.isFinite(x) || !Number.isFinite(y)) return;
       if (Math.abs(x) < tol) x = 0;
@@ -301,6 +317,9 @@
       if (y0 <= 0 && 0 <= y1) push(g(0), 0, 'x-intercept');
     } else {
       const F = curve.f;
+      // Crossings first so an extremum candidate that converges onto a
+      // crossing (where the tangent conditions hold too) is deduped away.
+      for (const p of implicitFeatures()) push(p.x, p.y, p.kind);
       for (const t of analyze((x) => F(x, 0), x0, x1, y1 - y0).zeros) push(t, 0, 'x-intercept');
       for (const t of analyze((y) => F(0, y), y0, y1, x1 - x0).zeros) push(0, t, 'y-intercept');
     }
@@ -319,7 +338,9 @@
     for (let i = 0; i < SAMPLES; i++) {
       const v0 = v[i], v1 = v[i + 1];
       if (!Number.isFinite(v0) || !Number.isFinite(v1)) continue;
-      if (v0 === 0) { zeros.push(t[i]); continue; }
+      // An exact zero counts only if isolated: a curve that runs along the
+      // axis (F identically 0 there) would otherwise mark every sample.
+      if (v0 === 0) { if (v1 !== 0 && (i === 0 || v[i - 1] !== 0)) zeros.push(t[i]); continue; }
       if ((v0 < 0) !== (v1 < 0)) {
         const root = bisect(f, t[i], t[i + 1]);
         // A sign flip across an asymptote (1/x, tan) bisects to a huge value; a
@@ -346,6 +367,144 @@
       }
     }
     return { zeros, extrema };
+  }
+
+  // ------------------------------------------ implicit-curve features
+
+  // Chains marching-squares segments into polylines by matching endpoints.
+  // Adjacent cells interpolate a shared edge from the same two node values,
+  // so their endpoints coincide exactly; the key rounds to 1/4 px anyway.
+  function chainSegments(segs) {
+    const key = (x, y) => Math.round(x * 4) + ',' + Math.round(y * 4);
+    const ends = new Map();
+    segs.forEach((s, i) => {
+      for (const k of [key(s[0], s[1]), key(s[2], s[3])]) {
+        if (!ends.has(k)) ends.set(k, []);
+        ends.get(k).push(i);
+      }
+    });
+    const used = new Uint8Array(segs.length);
+    const walk = (px, py) => {
+      const pts = [];
+      for (;;) {
+        pts.push([px, py]);
+        const next = (ends.get(key(px, py)) || []).find((j) => !used[j]);
+        if (next === undefined) return pts;
+        used[next] = 1;
+        const s = segs[next];
+        if (key(s[0], s[1]) === key(px, py)) { px = s[2]; py = s[3]; } else { px = s[0]; py = s[1]; }
+      }
+    };
+    const chains = [];
+    for (let i = 0; i < segs.length; i++) {
+      if (used[i]) continue;
+      used[i] = 1;
+      const forward = walk(segs[i][2], segs[i][3]);
+      const backward = walk(segs[i][0], segs[i][1]);
+      chains.push(backward.reverse().concat(forward));
+    }
+    return chains;
+  }
+
+  function implicitFeatures() {
+    const F = curve.f;
+    const out = [];
+    if (!implicit || implicit.segs.length === 0) return out;
+    const unit = 1 / view.scale;          // math units per pixel
+    const cell = CELL * unit;
+    const near = 3 * cell;                // how far a refinement may wander
+    const h = cell * 0.01;                // differentiation step (small: its O(h²) error shifts where Newton lands)
+    const Fx = (x, y) => (F(x + h, y) - F(x - h, y)) / (2 * h);
+    const Fy = (x, y) => (F(x, y + h) - F(x, y - h)) / (2 * h);
+    // |F| a couple of cells away, as the yardstick for "F is zero here".
+    const scaleAt = (x, y) => Math.max(Math.abs(F(x + 2 * cell, y)), Math.abs(F(x - 2 * cell, y)),
+                                       Math.abs(F(x, y + 2 * cell)), Math.abs(F(x, y - 2 * cell)), 1e-300);
+    const onCurve = (p) => Number.isFinite(F(p[0], p[1])) && Math.abs(F(p[0], p[1])) < 1e-5 * scaleAt(p[0], p[1]);
+    const closeTo = (p, x, y) => Math.hypot(p[0] - x, p[1] - y) < near;
+
+    const chains = chainSegments(implicit.segs).map((c) => c.map(([px, py]) => fromPx(px, py)));
+
+    // Self-intersections: from saddle cells and from chain ends that stop
+    // in the interior (a crossing splits the marching-squares output into
+    // chains that end near it).
+    const edge = 2 * CELL;
+    const interior = (px, py) => px > edge && px < width - edge && py > edge && py < height - edge;
+    const crossingSeeds = implicit.saddles.map(([px, py]) => fromPx(px, py));
+    for (const c of chainSegments(implicit.segs)) {
+      const a = c[0], b = c[c.length - 1];
+      if (Math.hypot(a[0] - b[0], a[1] - b[1]) < 1) continue;       // closed loop
+      if (interior(a[0], a[1])) crossingSeeds.push(fromPx(a[0], a[1]));
+      if (interior(b[0], b[1])) crossingSeeds.push(fromPx(b[0], b[1]));
+    }
+    const crossings = [];
+    const tryCrossing = (sx, sy) => {
+      const p = newton2((x, y) => [Fx(x, y), Fy(x, y)], sx, sy, cell);
+      if (!p || !closeTo(p, sx, sy) || !onCurve(p)) return false;
+      crossings.push({ x: p[0], y: p[1], kind: 'self-intersection' });
+      return true;
+    };
+    for (const [sx, sy] of crossingSeeds) tryCrossing(sx, sy);
+
+    // Extremes of each chain in y (horizontal tangent) and x (vertical).
+    const W = 3;
+    for (const c of chains) {
+      const n = c.length;
+      if (n < 2 * W + 1) continue;
+      const closed = Math.hypot(c[0][0] - c[n - 1][0], c[0][1] - c[n - 1][1]) < cell * 0.5;
+      const m = closed ? n - 1 : n;
+      const at = (i) => closed ? c[((i % m) + m) % m] : c[i];
+      for (let i = 0; i < m; i++) {
+        if (!closed && (i < W || i >= n - W)) continue;
+        const p = at(i);
+        let maxY = true, minY = true, maxX = true, minX = true;
+        for (let d = 1; d <= W; d++) {
+          const a = at(i - d), b = at(i + d);
+          if (!(p[1] >= a[1] && p[1] >= b[1])) maxY = false;
+          if (!(p[1] <= a[1] && p[1] <= b[1])) minY = false;
+          if (!(p[0] >= a[0] && p[0] >= b[0])) maxX = false;
+          if (!(p[0] <= a[0] && p[0] <= b[0])) minX = false;
+        }
+        const strictY = at(i - W)[1] !== p[1] || at(i + W)[1] !== p[1];
+        const strictX = at(i - W)[0] !== p[0] || at(i + W)[0] !== p[0];
+        const isTip = ((maxY || minY) && strictY) || ((maxX || minX) && strictX);
+        // Two lobes meeting at a crossing (a lemniscate's waist) come out of
+        // marching squares as two closed loops whose tips sit on the crossing,
+        // with no loose end or saddle cell to seed from — and the tangent
+        // conditions hold at a crossing too, so a tip would otherwise be
+        // reported as an extremum. Try the crossing search from every tip first.
+        if (isTip && tryCrossing(p[0], p[1])) continue;
+        if ((maxY || minY) && strictY) {
+          const q = newton2((x, y) => [F(x, y), Fx(x, y)], p[0], p[1], cell);
+          if (q && closeTo(q, p[0], p[1]) && onCurve(q)) out.push({ x: q[0], y: q[1], kind: maxY ? 'maximum' : 'minimum' });
+        }
+        if ((maxX || minX) && strictX) {
+          const q = newton2((x, y) => [F(x, y), Fy(x, y)], p[0], p[1], cell);
+          if (q && closeTo(q, p[0], p[1]) && onCurve(q)) out.push({ x: q[0], y: q[1], kind: maxX ? 'rightmost' : 'leftmost' });
+        }
+      }
+    }
+    // Crossings first: a tip that converged onto one is deduped away by push().
+    return crossings.concat(out);
+  }
+
+  // Newton's method on a 2-D system G(x, y) = [0, 0] with a numerical
+  // Jacobian. Returns the converged point or null.
+  function newton2(G, x, y, step) {
+    const h = step * 0.1;
+    for (let it = 0; it < 30; it++) {
+      const [g1, g2] = G(x, y);
+      const [a1, a2] = G(x + h, y), [b1, b2] = G(x - h, y);
+      const [c1, c2] = G(x, y + h), [d1, d2] = G(x, y - h);
+      const j11 = (a1 - b1) / (2 * h), j12 = (c1 - d1) / (2 * h);
+      const j21 = (a2 - b2) / (2 * h), j22 = (c2 - d2) / (2 * h);
+      const det = j11 * j22 - j12 * j21;
+      if (!Number.isFinite(det) || det === 0) return null;
+      const dx = (g1 * j22 - g2 * j12) / det, dy = (j11 * g2 - j21 * g1) / det;
+      x -= dx; y -= dy;
+      if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
+      if (Math.hypot(dx, dy) < step * 1e-8) return [x, y];
+    }
+    return [x, y];
   }
 
   function bisect(f, lo, hi) {
