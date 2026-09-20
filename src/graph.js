@@ -13,9 +13,12 @@
 // circles look like circles. Redraws are coalesced onto one animation frame.
 //
 // Curves come in three kinds from LatexMath.compileEquation:
-//   'y'         y = f(x): sampled once per pixel column, the path broken
-//               wherever a sample is non-finite or jumps further than the
-//               whole view (an asymptote, e.g. tan).
+//   'y'         y = f(x): sampled four times per pixel column, the path
+//               broken wherever a sample is non-finite or jumps further than
+//               the whole view (an asymptote, e.g. tan). Where the function
+//               stops being defined — the feet of √(sin x)'s arches — the
+//               exact edge is found by bisection and the path drawn to it,
+//               so arches touch the axis instead of stopping a sample short.
 //   'x'         x = g(y): the same, per pixel row.
 //   'implicit'  F(x, y) = 0: marching squares over a coarse grid, which is
 //               what makes x² + y² = 4 draw as a circle.
@@ -53,7 +56,8 @@
   const CELL = 3;                // marching-squares cell, css px
   const HOVER_RADIUS = 10;       // px, for snapping to a point of interest
   const TRACE_RADIUS = 14;       // px, for tracing along the curve
-  const MAX_POINTS = 120;
+  const MAX_POINTS = 400;
+  const OVERSAMPLE = 4;          // samples per pixel when tracing explicit curves
 
   const view = { cx: 0, cy: 0, scale: DEFAULT_SCALE };
   let curve = null;       // { kind, f, label } or null
@@ -201,20 +205,39 @@
     ctx.stroke();
   }
 
-  // Walks one pixel at a time along the sampled axis, breaking the path at
-  // non-finite values and at jumps bigger than the whole canvas (asymptotes).
-  function tracePath(sample, length) {
+  // Walks along the sampled axis a fraction of a pixel at a time, breaking
+  // the path at non-finite values and at jumps bigger than the whole canvas
+  // (asymptotes). Each time the function crosses between defined and
+  // undefined, the boundary is located by bisection and the path is drawn
+  // right up to it, so a curve that ends at its domain edge (a √ hitting
+  // zero) visibly reaches that point rather than stopping a sample short.
+  function tracePath(sampleAt, length) {
     const limit = Math.max(width, height) * 4;
-    let pen = false, prev = null;
-    for (let i = 0; i <= length; i++) {
-      const [px, py] = sample(i);
-      const ok = Number.isFinite(px) && Number.isFinite(py);
-      if (!ok) { pen = false; prev = null; continue; }
-      const cx = Math.max(-1e5, Math.min(1e5, px)), cy = Math.max(-1e5, Math.min(1e5, py));
+    const finite = (p) => Number.isFinite(p[0]) && Number.isFinite(p[1]);
+    const edge = (goodT, badT) => {
+      for (let i = 0; i < 30; i++) {
+        const mid = (goodT + badT) / 2;
+        if (finite(sampleAt(mid))) goodT = mid; else badT = mid;
+      }
+      return sampleAt(goodT);
+    };
+    let pen = false, prev = null, prevT = null, prevOk = false;
+    const plot = (p) => {
+      const cx = Math.max(-1e5, Math.min(1e5, p[0])), cy = Math.max(-1e5, Math.min(1e5, p[1]));
       if (pen && prev && (Math.abs(cx - prev[0]) > limit || Math.abs(cy - prev[1]) > limit)) pen = false;
       if (pen) ctx.lineTo(cx, cy); else ctx.moveTo(cx, cy);
       pen = true;
       prev = [cx, cy];
+    };
+    const step = 1 / OVERSAMPLE;
+    for (let t = 0; t <= length; t += step) {
+      const p = sampleAt(t);
+      const ok = finite(p);
+      if (ok && !prevOk && prevT !== null) { pen = false; plot(edge(t, prevT)); }
+      if (!ok && prevOk) { plot(edge(prevT, t)); pen = false; prev = null; }
+      if (ok) plot(p);
+      prevOk = ok;
+      prevT = t;
     }
   }
 
@@ -337,6 +360,14 @@
 
     for (let i = 0; i < SAMPLES; i++) {
       const v0 = v[i], v1 = v[i + 1];
+      // A domain edge (defined on one side, not the other) is a zero when
+      // the function reaches 0 there, as at each foot of √(sin x)'s arches.
+      if (Number.isFinite(v0) !== Number.isFinite(v1)) {
+        let good = Number.isFinite(v0) ? t[i] : t[i + 1], bad = Number.isFinite(v0) ? t[i + 1] : t[i];
+        for (let k = 0; k < 60; k++) { const mid = (good + bad) / 2; if (Number.isFinite(f(mid))) good = mid; else bad = mid; }
+        if (Math.abs(f(good)) < 1e-6 * Math.max(1, Math.abs(range))) zeros.push(good);
+        continue;
+      }
       if (!Number.isFinite(v0) || !Number.isFinite(v1)) continue;
       // An exact zero counts only if isolated: a curve that runs along the
       // axis (F identically 0 there) would otherwise mark every sample.
