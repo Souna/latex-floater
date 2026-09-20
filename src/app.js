@@ -379,7 +379,8 @@ document.addEventListener('wheel', (e) => {
 // this is just the plumbing around it.
 // ---------------------------------------------------------------------------
 
-const GRAPH_HEIGHT = 220;   // must match --graph-height in styles.css
+const GRAPH_HEIGHT = 220;   // comfortable plot height the window is grown to provide
+const GRAPH_MIN = 120;      // must match .graph's min-height in styles.css
 
 const graphPanel  = document.getElementById('graph');
 const graphWrap   = document.getElementById('graph-canvas-wrap');
@@ -417,6 +418,16 @@ async function ensureGraphRoom() {
   await window.floater.resizeBy(need);
 }
 
+// While the graph is expanded the window may not be shrunk below what the
+// layout needs (plot and history each at the plot's minimum, plus the
+// field row and chrome); otherwise the panel would overflow the editor
+// area and hide the bars below it. Collapsing restores the normal minimum.
+function applyGraphMinHeight(open) {
+  if (!open) return window.floater.setMinHeight(280);
+  const chrome = window.innerHeight - editorEl.clientHeight;
+  return window.floater.setMinHeight(Math.ceil(chrome + editorRow.offsetHeight + 24 + 2 * GRAPH_MIN));
+}
+
 async function setGraphOpen(open) {
   graphOpen = open;
   localStorage.setItem('graphOpen', open);
@@ -424,13 +435,17 @@ async function setGraphOpen(open) {
 
   if (open) {
     await ensureGraphRoom();
+    await applyGraphMinHeight(true);
     window.Grapher.refresh();
     window.Grapher.setLatex(mf.latex() || '');
-  } else if (graphGrown > 0) {
-    const delta = graphGrown;
-    graphGrown = 0;
-    localStorage.setItem('graphGrown', 0);
-    await window.floater.resizeBy(-delta);
+  } else {
+    await applyGraphMinHeight(false);
+    if (graphGrown > 0) {
+      const delta = graphGrown;
+      graphGrown = 0;
+      localStorage.setItem('graphGrown', 0);
+      await window.floater.resizeBy(-delta);
+    }
   }
   mf.focus();
 }
@@ -528,7 +543,7 @@ updateSource();
 // remembers what to give back on collapse either way.
 applyGraphLayout(graphOpen);
 if (graphOpen) {
-  ensureGraphRoom().then(() => {
+  ensureGraphRoom().then(() => applyGraphMinHeight(true)).then(() => {
     window.Grapher.refresh();
     window.Grapher.setLatex(mf.latex() || '');
   });

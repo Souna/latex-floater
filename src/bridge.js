@@ -66,6 +66,12 @@ window.floater = {
     if (overflow > 0) await appWindow.setPosition(new LogicalPosition(pos.x, Math.max(areaTop, pos.y - overflow)));
   },
 
+  // Lower bound on the window height in CSS pixels (width stays 480).
+  setMinHeight: (h) => {
+    const { LogicalSize } = window.__TAURI__.window;
+    return appWindow.setMinSize(new LogicalSize(480, h));
+  },
+
   onFocus: (cb) => appWindow.onFocusChanged(({ payload: focused }) => { if (focused) cb(); }),
 
   renderPng: (latex, fontSize) => renderLatexToPng(latex, fontSize),

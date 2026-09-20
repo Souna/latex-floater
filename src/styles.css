@@ -197,6 +197,10 @@ body {
   flex-direction: column;
   user-select: text;
   transition: background 0.15s;
+  /* Whatever happens inside (a plot that wants more height than a small
+     window has), it must never paint over the TeX bar and action row
+     below — canvas content otherwise draws above later siblings' backgrounds. */
+  overflow: hidden;
 }
 
 .editor__history {
@@ -254,7 +258,11 @@ body {
 
 .graph {
   flex: 1 1 0;
-  min-height: var(--graph-height, 220px);
+  /* Comfortable height is arranged by growing the window (GRAPH_HEIGHT in
+     app.js); this is only how far the plot may be squeezed when the user
+     shrinks the window, and app.js raises the window's minimum height so
+     it can't be squeezed further than this. */
+  min-height: 120px;
   margin-top: 8px;
   display: flex;
   flex-direction: column;
