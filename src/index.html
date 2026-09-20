@@ -77,6 +77,9 @@
     </div>
     <div class="editor__row">
       <span id="mf" class="editor__field"></span>
+      <!-- The value of a closed expression (no free x or y), e.g. "= -2"
+           for a definite integral. Filled by app.js; hidden otherwise. -->
+      <span class="editor__result" id="result" hidden></span>
       <button id="btn-clear" class="editor__clear" title="Clear (Esc)">
         <svg viewBox="0 0 16 16" width="12" height="12" fill="currentColor" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
       </button>

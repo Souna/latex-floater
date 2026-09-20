@@ -152,7 +152,42 @@ const sourceOut = document.getElementById('source-out');
 function updateSource() {
   const latex = mf.latex() || '';
   sourceOut.textContent = latex;
+  updateResult(latex);
   if (graphOpen) window.Grapher.setLatex(latex);
+}
+
+// ---------------------------------------------------------------------------
+// Result readout.
+//
+// If what's in the field is a closed expression — no "=", no free x or y —
+// its value is shown at the bottom right of the field ("= -2" for a
+// definite integral), the way Desmos does. LatexMath.evaluate does the work:
+// arithmetic, functions, constants, and numerically evaluated \int, \sum
+// and \prod. Anything that doesn't parse, or isn't a closed value, simply
+// shows nothing; the graph bar is where parse errors are reported.
+// ---------------------------------------------------------------------------
+
+const resultEl = document.getElementById('result');
+
+function formatResult(v) {
+  if (!Number.isFinite(v)) return v > 0 ? '∞' : v < 0 ? '-∞' : 'undefined';
+  const a = Math.abs(v);
+  if (a !== 0 && (a >= 1e12 || a < 1e-6)) return v.toExponential(6).replace(/\.?0+e/, 'e');
+  // Ten significant digits, which turns the numerical -2.0000000000004 of
+  // an integral back into -2, without hiding genuine digits of sqrt(2).
+  return String(parseFloat(v.toPrecision(10)));
+}
+
+function updateResult(latex) {
+  let text = '';
+  try {
+    const v = window.LatexMath.evaluate(latex);
+    if (v !== null && !Number.isNaN(v)) text = '= ' + formatResult(v);
+  } catch {
+    // Not a closed expression, or not parseable: no readout.
+  }
+  resultEl.textContent = text;
+  resultEl.hidden = !text;
 }
 
 // ---------------------------------------------------------------------------

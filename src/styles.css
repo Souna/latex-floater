@@ -252,6 +252,21 @@ body {
   padding-right: 26px;
 }
 
+/* "= value" tucked into the field's bottom-right corner, Desmos-style. */
+.editor__result {
+  position: absolute;
+  right: 34px;
+  bottom: 5px;
+  font-family: 'IBM Plex Mono', ui-monospace, monospace;
+  font-size: 12px;
+  color: var(--fg-dim);
+  background: var(--bg-raise);
+  padding: 1px 6px;
+  border-radius: var(--radius-sm);
+  pointer-events: none;
+}
+.editor__result[hidden] { display: none; }
+
 /* =========================================================================
    Grapher panel
    ========================================================================= */
