@@ -44,6 +44,15 @@ window.floater = {
 
   setOpacity: (value) => invoke('set_opacity', { value }),
 
+  // Grow or shrink the window height by `deltaPx` CSS pixels, width kept.
+  // Used when the graph panel opens in a window too short to hold it.
+  resizeBy: async (deltaPx) => {
+    const { LogicalSize } = window.__TAURI__.window;
+    const scale = await appWindow.scaleFactor();
+    const size = (await appWindow.innerSize()).toLogical(scale);
+    await appWindow.setSize(new LogicalSize(size.width, Math.max(280, size.height + deltaPx)));
+  },
+
   onFocus: (cb) => appWindow.onFocusChanged(({ payload: focused }) => { if (focused) cb(); }),
 
   renderPng: (latex, fontSize) => renderLatexToPng(latex, fontSize),

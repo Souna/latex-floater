@@ -150,7 +150,9 @@ historyList.addEventListener('click', (e) => {
 const sourceOut = document.getElementById('source-out');
 
 function updateSource() {
-  sourceOut.textContent = mf.latex() || '';
+  const latex = mf.latex() || '';
+  sourceOut.textContent = latex;
+  if (graphOpen) window.Grapher.setLatex(latex);
 }
 
 // ---------------------------------------------------------------------------
@@ -240,7 +242,7 @@ document.getElementById('btn-clear').addEventListener('click', clearField);
 // after which typing went nowhere until the user found the strip. Treat a
 // click anywhere in the editor box as a click into the field.
 document.querySelector('.editor').addEventListener('mousedown', (e) => {
-  if (mqEl.contains(e.target) || e.target.closest('#btn-clear, .history__item')) return;
+  if (mqEl.contains(e.target) || e.target.closest('#btn-clear, .history__item, .graph')) return;
   e.preventDefault();
   mf.focus();
   mf.moveToRightEnd();
@@ -362,6 +364,60 @@ document.addEventListener('wheel', (e) => {
 }, { passive: false });
 
 // ---------------------------------------------------------------------------
+// Grapher panel.
+//
+// The Graph button toggles the panel, which sits below the field in place of
+// the centring spacer, so the field moves up to make room. The panel needs
+// real height to be useful and the default window is short, so opening it
+// grows the window by whatever the editor area is missing, and closing it
+// gives that back. The amount grown is remembered in localStorage alongside
+// the open state, so a relaunch that restores the (taller) window with the
+// graph open still knows how much to shrink on close. graph.js owns
+// everything inside the panel; this is just the plumbing around it.
+// ---------------------------------------------------------------------------
+
+const GRAPH_HEIGHT = 240;   // must match --graph-height in styles.css
+const GRAPH_ROOM = 90;      // px of history to keep visible above the field
+
+const btnGraph   = document.getElementById('btn-graph');
+const graphPanel = document.getElementById('graph');
+const editorEl   = document.querySelector('.editor');
+const editorRow  = document.querySelector('.editor__row');
+const belowEl    = document.getElementById('editor-below');
+
+let graphOpen  = localStorage.getItem('graphOpen') === 'true';
+let graphGrown = parseInt(localStorage.getItem('graphGrown') || '0', 10) || 0;
+
+async function setGraphOpen(open) {
+  graphOpen = open;
+  localStorage.setItem('graphOpen', open);
+  btnGraph.classList.toggle('is-active', open);
+  graphPanel.hidden = !open;
+  belowEl.hidden = open;
+
+  if (open) {
+    const available = editorEl.clientHeight - editorRow.offsetHeight - 16;
+    const need = GRAPH_HEIGHT + 8 + GRAPH_ROOM - available;
+    if (need > 0 && graphGrown === 0) {
+      graphGrown = need;
+      localStorage.setItem('graphGrown', graphGrown);
+      await window.floater.resizeBy(need);
+    }
+    window.Grapher.refresh();
+    window.Grapher.setLatex(mf.latex() || '');
+  } else if (graphGrown > 0) {
+    const delta = graphGrown;
+    graphGrown = 0;
+    localStorage.setItem('graphGrown', 0);
+    await window.floater.resizeBy(-delta);
+  }
+  mf.focus();
+}
+
+btnGraph.addEventListener('click', () => setGraphOpen(!graphOpen));
+document.getElementById('graph-collapse').addEventListener('click', () => setGraphOpen(false));
+
+// ---------------------------------------------------------------------------
 // Light / dark theme toggle.
 // ---------------------------------------------------------------------------
 
@@ -374,6 +430,7 @@ function applyTheme(theme) {
   iconSun.style.display  = isLight ? 'none'  : '';
   iconMoon.style.display = isLight ? ''      : 'none';
   localStorage.setItem('theme', theme);
+  window.Grapher.redraw();
 }
 
 applyTheme(localStorage.getItem('theme') || 'dark');
@@ -446,6 +503,16 @@ applyFontSize();
 renderHistory();
 window.floater.setOpacity(parseFloat(localStorage.getItem('opacity') || '1'));
 updateSource();
+// Restore the panel without re-growing: the window-state plugin already
+// brings back the taller window, and graphGrown remembers what to give
+// back on close.
+if (graphOpen) {
+  btnGraph.classList.add('is-active');
+  graphPanel.hidden = false;
+  belowEl.hidden = true;
+  window.Grapher.refresh();
+  window.Grapher.setLatex(mf.latex() || '');
+}
 setTimeout(() => mf.focus(), 50);
 
 // Re-focus the math field whenever the app window comes back into focus.

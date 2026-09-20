@@ -13,6 +13,7 @@ A small always-on-top desktop window for writing LaTeX fast. Type directly into 
   - **Copy LaTeX** — for Overleaf, Obsidian, Notion (`$$...$$`), Jupyter, GitHub, Markdown, Discord
   - **PNG** — for Google Docs, email, Slack, PowerPoint, or anywhere else without math rendering
 - Light/dark theme toggle, an opacity slider, and font-size controls in the titlebar
+- A grapher: the **Graph** button opens a Desmos-style plot of the current expression below the field. It handles `y = f(x)`, `x = g(y)`, bare expressions in `x`, and implicit equations like `x^2+y^2=4`. Drag to pan, scroll to zoom, double-click to reset. Axis intercepts and local maxima/minima are marked; hover a point (or the curve itself) for its coordinates
 - Global hotkey `Ctrl+Alt+L` (`Cmd+Alt+L` on macOS) summons and focuses the window from any application
 - Keyboard shortcuts: `Ctrl+Enter` copy LaTeX, `Esc` copy and clear, `Alt+Up`/`Alt+Down` browse history
 
@@ -57,7 +58,9 @@ latex-floater/
     index.html            ← UI markup
     styles.css            ← Dark/light theme, IBM Plex typography
     bridge.js             ← window.floater: clipboard, window chrome, PNG rendering
-    app.js                ← MathQuill wiring, history, shorthand substitution, copy handlers, shortcuts
+    latex-math.js         ← parses MathQuill's LaTeX into an evaluable function for the grapher
+    graph.js              ← the grapher: canvas plot, pan/zoom, points of interest
+    app.js                ← MathQuill wiring, history, shorthand substitution, copy handlers, shortcuts, graph toggle
     fonts/                ← IBM Plex, self-hosted
   src-tauri/              ← the native shell (Rust)
     src/lib.rs            ← clipboard and opacity commands, global hotkey, plugins
