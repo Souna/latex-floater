@@ -1,116 +1,139 @@
 # CLAUDE.md — project briefing for Claude Code
 
-This file is auto-read at the start of every Claude Code session in this directory. It describes the codebase **as it currently exists** (last verified 2026-09-20 by reading every file in `src/`). If you're about to say something here doesn't match what you see in `src/`, trust the code — update this file, don't argue with it.
+This file is auto-read at the start of every Claude Code session in this directory. It describes the codebase **as it currently exists** (last verified 2026-09-20 by reading every file in `src/` and `src-tauri/`). If you're about to say something here doesn't match what you see in the code, trust the code — update this file, don't argue with it.
 
 ## What this project is
 
-**LaTeX Floater** is a small Windows desktop utility: a floating, always-on-top window for writing LaTeX fast and copying it out to LaTeX source or PNG. It's a single math field — type LaTeX directly (`\frac`, `\sqrt`, `^`, `_`, typed function/Greek-letter names) — in a compact frameless window that stays on top of whatever the user is writing into (Word, Overleaf, email, Slack, etc.).
+**LaTeX Floater** is a small desktop utility for Windows and macOS: a floating, always-on-top window for writing LaTeX fast and copying it out to LaTeX source or PNG. It's a single math field — type LaTeX directly (`\frac`, `\sqrt`, `^`, `_`, typed function/Greek-letter names) — in a compact frameless window that stays on top of whatever the user is writing into (Word, Overleaf, email, Slack, etc.). It's used by the owner and a couple of friends across both platforms.
 
-There is **no symbol palette** in the UI. Earlier design notes for this project described a Symbolab-style tabbed palette; that was never built (or was removed) in the current implementation. The whole interaction model is: type, watch it render, copy.
+There is **no symbol palette** in the UI. Earlier design notes for this project described a Symbolab-style tabbed palette; that was never built. The whole interaction model is: type, watch it render, copy.
 
 ## Stack (decided — don't re-evaluate without a reason)
 
-- **Electron** for the shell.
-- **MathQuill** (`node_modules/mathquill`, loaded via a `<script>` tag plus jQuery as its required dependency) is the math editor engine. It's initialized as `MQ.MathField(...)` in [app.js](src/app.js). MathQuill was chosen specifically because `spaceBehavesLikeTab` keeps the caret inside a superscript/subscript/fraction until the user explicitly tabs or arrows out — matching Symbolab's cursor feel more closely than the alternatives.
-- **jQuery** is present solely because MathQuill 0.10's build requires it as a global. Nothing else in the app uses it.
-- **`temml`** is listed in `package.json` dependencies and in `electron-builder`'s `build.files` glob, but it is **not imported or referenced anywhere in the source**. It's a dead dependency left over from an abandoned MathML-export feature — see "Things that are intentionally NOT in v1" below.
-- **No framework** in the renderer — plain HTML/CSS/JS.
-- **IBM Plex** (Sans + Mono) for typography, loaded from Google Fonts. Accent color is amber `#d4a45c`.
-- **No extra clipboard/image libraries.** Electron's built-in `clipboard` + `nativeImage` cover text and PNG.
+- **Tauri 2** for the shell (Rust, in `src-tauri/`). It replaced Electron on 2026-09-20 because the packaged Electron app was 73 MB installed / 227 MB unpacked / ~300 MB RAM for under 1 MB of actual application, and the friends who use this are on both Windows and macOS, which ruled out a Windows-only WebView2 host. Tauri renders in the OS's own web view (WebView2 on Windows, WKWebView on macOS). Measured on Windows after the switch: 2.3 MB NSIS installer, 2.8 MB MSI, 4.6 MB exe, ~30 MB RAM for the app process (WebView2's own helper processes are separate and shared with Edge).
+- **MathQuill** (vendored into `src/vendor/` from the `mathquill` npm package) is the math editor engine, initialized as `MQ.MathField(...)` in [app.js](src/app.js). Chosen because `spaceBehavesLikeTab` keeps the caret inside a superscript/subscript/fraction until the user explicitly tabs or arrows out — matching Symbolab's cursor feel.
+- **jQuery 4** is present solely because MathQuill 0.10's build requires it as a global. Nothing else in the app uses it. (Verified: jQuery 4 still ships the `bind`/`unbind`/event-shorthand methods MathQuill 0.10.1a calls.)
+- **MathJax 3** (`tex-svg.js`, vendored, ~2 MB) is used **only for PNG export** and is loaded lazily on the first export, never at startup. See "PNG export" below for why.
+- **No framework** in the renderer — plain HTML/CSS/JS. No bundler either: Tauri serves `src/` as-is.
+- **IBM Plex** (Sans + Mono) for typography, self-hosted in `src/fonts/`. Accent color is amber `#d4a45c`.
+- **Rust dependencies are minimal**: `tauri` (with the `image-png` feature), three official plugins (`clipboard-manager`, `global-shortcut`, `window-state`), `base64`, and per-platform `windows-sys` / `objc2-app-kit` for window opacity only.
 
 ## File layout
 
 ```
 latex-floater/
-├── package.json     Electron + MathQuill/jQuery/temml deps, npm scripts, electron-builder config
-├── README.md         User-facing setup and usage
-├── CLAUDE.md         ← this file
-└── src/
-    ├── main.js             Electron main process: window creation, IPC, clipboard, position persistence, global hotkey, off-screen PNG rendering
-    ├── preload.js          contextBridge exposing window.floater.{copyText, copyImage, togglePin, minimize, close, setOpacity, onFocus, getPinState, renderPng}
-    ├── index.html          UI markup (titlebar, editor field, source readout, actions)
-    ├── styles.css          Dark/light theme via CSS variables, dense layout
-    ├── app.js              MathQuill wiring, history, shorthand substitution, copy handlers, keyboard shortcuts, theme/opacity/font-size controls
-    ├── capture.html        Markup for the hidden PNG-export window — just a bare math field, no app chrome
-    ├── capture.js          Renders one LaTeX string into capture.html and reports its true size back to main.js
-    └── capture-preload.js  contextBridge exposing window.captureBridge.{onRender, reportSize} — separate, smaller bridge just for the capture window
+├── package.json          npm scripts (vendor / dev / build), MathQuill + jQuery + MathJax + Tauri CLI deps
+├── scripts/vendor.js     Copies the five third-party runtime files from node_modules into src/vendor/
+├── README.md             User-facing setup and usage
+├── CLAUDE.md             ← this file
+├── src/                  The frontend. Tauri bundles this directory verbatim (build.frontendDist).
+│   ├── index.html        UI markup (titlebar, editor field, source readout, actions)
+│   ├── styles.css        Dark/light theme via CSS variables, dense layout, MathQuill overrides
+│   ├── bridge.js         Defines window.floater on top of window.__TAURI__; also PNG rendering
+│   ├── app.js            MathQuill wiring, history, shorthand substitution, copy handlers, shortcuts, theme/opacity/font-size
+│   ├── fonts/            IBM Plex woff2 files
+│   └── vendor/           GENERATED, gitignored: jquery.min.js, mathquill.min.js, mathquill.css, font/Symbola.woff2, tex-svg.js
+└── src-tauri/            The native shell.
+    ├── Cargo.toml        Crate deps and a size-optimised release profile
+    ├── tauri.conf.json   Window definition (frameless, always-on-top, 620×380 min 480×280), CSP, bundle targets, icons
+    ├── capabilities/default.json   Permissions the frontend has (window minimize/close/pin/drag/focus)
+    ├── icons/            Generated by `npx tauri icon src-tauri/icons/source.svg`; source.svg is the one to edit
+    ├── build.rs          Standard tauri_build::build()
+    └── src/
+        ├── main.rs       Entry point; hides the console on Windows release builds
+        └── lib.rs        Everything native: copy_text, copy_image, set_opacity commands; Ctrl+Alt+L hotkey; plugin setup
 ```
 
-There is no separate palette data file — there is no palette.
+`src/vendor/` and `src-tauri/target/` are gitignored and regenerable. `src-tauri/gen/schemas/` is also generated (capability JSON schemas) and gitignored.
 
 ## Key architectural decisions and why
 
-**Two output formats, not three.** Copy LaTeX is primary (Overleaf, Obsidian, Notion, Markdown, Jupyter, Discord). PNG is the fallback for anywhere without math rendering (Google Docs, email, Slack, PowerPoint). A MathML export was planned (the `temml` dependency is a remnant of that) but was never wired up — no button, no shortcut, no handler exists.
+**The renderer is shell-agnostic; `bridge.js` is the seam.** `app.js` is written entirely against a `window.floater` object with these members: `copyText`, `copyImage(dataUrl)`, `togglePin`, `getPinState`, `minimize`, `close`, `setOpacity`, `onFocus(cb)`, `renderPng(latex, fontSize)`, `platform`. Under Electron that object came from a preload script; now `bridge.js` builds it from `window.__TAURI__` (enabled by `app.withGlobalTauri` in `tauri.conf.json`, so no bundler or `@tauri-apps/api` import is needed). If something shell-specific is needed, it goes in `bridge.js` or `lib.rs`, never in `app.js`.
 
-**PNG is produced by screenshotting a hidden, off-screen second window**, not by any markup-to-image library and not by capturing the visible app window. `copyPng()` in [app.js](src/app.js) calls `window.floater.renderPng(latex, fontSize)`, which invokes the `png:render` handler in [main.js](src/main.js) — that handler lazily creates (and thereafter reuses) an invisible `BrowserWindow` (`show: false`, `skipTaskbar: true`) loading `capture.html`, sends it the LaTeX via `capture:render`, waits for `capture.js` to render it and report back its true rendered size over `capture:size-reported`, calls `setContentSize()` on the hidden window to exactly fit that, then `capturePage()`s it and returns a PNG data URL.
+**Only three things cross into Rust.** `copy_text` and `copy_image` (clipboard, via the clipboard-manager plugin; the image arrives as base64 PNG and is decoded with `tauri::image::Image::from_bytes`, hence the `image-png` feature) and `set_opacity`. Window chrome — pin, minimize, close, drag, focus events — uses Tauri's JS window API directly, gated by the permissions in `capabilities/default.json`. The app's own three commands are allowed implicitly; plugin usage from the Rust side needs no permissions.
 
-This replaced an earlier version that resized the *visible* app window to fit oversized expressions before capturing — which worked, but visibly ballooned the real window on every export of anything too big for it. It also replaced an even earlier version that used `mqEl.scrollWidth`/`scrollHeight` to detect when a resize was needed, which never actually worked: MathQuill's own CSS forces `.mq-root-block` to `width:100%` of its container, and with `overflow: visible` everywhere in this component's CSS (nothing sets `hidden`/`scroll`/`auto`), `scrollWidth`/`scrollHeight` just return `clientWidth`/`clientHeight` in Chromium — i.e. always "no overflow," even when there obviously is. `capture.html` avoids the whole problem by deliberately *not* setting `width:100%` anywhere in its own CSS, so its `#mf` field naturally shrink-to-fits its content and `getBoundingClientRect()` on it reports the true size regardless of the hidden window's current (much smaller) dimensions — verified directly in a browser: a wide expression reported a 1401px-wide bounding rect inside a 600px viewport.
+**Window opacity is done natively per platform.** Neither tauri nor tao has a window-opacity API. The alternative — a `transparent: true` window with CSS `opacity` on `<html>` — costs the native shadow and resize borders on Windows and needs `macOSPrivateApi` on macOS. So `set_opacity` in `lib.rs` goes to the OS: `WS_EX_LAYERED` + `SetLayeredWindowAttributes(LWA_ALPHA)` on Windows (and it clears the layered style again at full opacity, since layered windows composite differently), `NSWindow.setAlphaValue` on macOS. Both run inside `run_on_main_thread` because Tauri executes commands on a worker thread and both OSes require window attribute changes on the main thread. The macOS branch has **not** been compiled or run yet — see "Open threads".
 
-The capture window is intentionally never shown and is reused across exports rather than recreated each time (avoids ~200ms of window/page startup cost per export). It always renders white-background/dark-text regardless of the app's current light/dark theme, since the exported image isn't meant to carry the app's UI theme.
+**Window geometry persists via `tauri-plugin-window-state`**, not a hand-rolled settings file. It saves size/position on exit to the app's data directory and restores them on launch, clamped to a visible monitor. This also retired the Electron-era DPI workaround (Electron's `getSize()` on Windows at 175% scale reported 3 DIP more than requested, so saving it verbatim grew the window every launch). Verified under Tauri: a 620×380 window is exactly 1085×665 physical pixels at 175% and relaunches at the identical size and position.
 
-**No palette — direct typing plus shorthand substitution instead.** Rather than clickable buttons, the app supports typing a bare word and having it become the LaTeX command. Two mechanisms do this and they must not overlap. Lowercase Greek letters, `infty` and `sqrt` are MathQuill `autoCommands` (configured in the `MQ.MathField` options in [app.js](src/app.js)) and convert the instant the last letter is typed, no Space needed. Words MathQuill won't handle itself — `inf` and the uppercase Greek letters — live in the `SHORTHANDS` map and convert when the user presses Space, via a capture-phase `keydown` listener that intercepts Space before MathQuill consumes it. On Space, the word to replace is read back from MathQuill's node list by walking left from the caret over plain-letter nodes (`wordLeftOfCaret()`), not from a tally of keystrokes: a tally can't tell when the caret moved or when an autoCommand already collapsed the letters, and the earlier tally-based version deleted one character too many for every lowercase Greek word (`x+pi` then Space gave `x\pi`). If you add a word to `SHORTHANDS`, make sure it is not also an autoCommand.
+**Pin state lives in the renderer's `localStorage`** (`pinned`), not in native settings. The window is declared `alwaysOnTop: true` in `tauri.conf.json`; `bridge.js` re-applies the saved preference with `setAlwaysOnTop` on boot so the two never disagree. The toggle flips the flag, applies it, and returns it for the button's amber state.
+
+**Drag region uses `data-tauri-drag-region`**, not `-webkit-app-region` (which Tauri doesn't support). Tauri starts a native drag on mousedown of an element carrying that attribute — the element itself only, not its children — so in `index.html` the `.titlebar`, `.titlebar__brand` and its two spans all carry it, while the controls on the right don't and keep receiving clicks. Requires `core:window:allow-start-dragging`.
+
+**Frameless but resizable.** `decorations: false` with Tauri's default `shadow: true` gives an undecorated window that still has OS resize borders on Windows and macOS.
+
+**Clicking anywhere in the editor box focuses the field.** The math field is a 40px strip vertically centred in a much taller `.editor` section; a click on the surrounding empty space used to move focus to `<body>` and typing went nowhere. A `mousedown` handler on `.editor` in `app.js` routes such clicks to `mf.focus()` (skipping the clear button).
+
+**PNG export renders in-page with MathJax SVG, not by screenshotting.** Tauri has no `capturePage()`. Rasterising the live MathQuill DOM from inside the page (SVG `foreignObject` tricks like html-to-image) is unreliable in WKWebView. So `renderLatexToPng` in `bridge.js` feeds the LaTeX to MathJax's `tex2svg` with `svg.fontCache: 'none'`, which emits a self-contained SVG whose glyphs are paths (no fonts to embed), measures it in the document at the editor's font size to convert MathJax's ex units to pixels, then draws it into a `<canvas>` at 2× with a white background and 16px padding and returns `canvas.toDataURL('image/png')`. The Rust side just decodes that and writes it to the clipboard. Consequences: the exported image uses real TeX glyphs rather than MathQuill's on-screen Symbola/Times look (an upgrade for its purpose), MathJax's 2 MB script loads on first export only, and MathJax's TeX dialect must accept what MathQuill emits — it does for everything MathQuill can produce, since MathQuill outputs standard LaTeX; invalid input renders as MathJax's red error text rather than throwing.
+
+**No palette — direct typing plus shorthand substitution instead.** Two mechanisms turn typed words into LaTeX and they must not overlap. Lowercase Greek letters, `infty` and `sqrt` are MathQuill `autoCommands` (configured in the `MQ.MathField` options in `app.js`) and convert the instant the last letter is typed, no Space needed. Words MathQuill won't handle itself — `inf` and the uppercase Greek letters — live in the `SHORTHANDS` map and convert when the user presses Space, via a capture-phase `keydown` listener that intercepts Space before MathQuill consumes it. On Space, the word to replace is read back from MathQuill's node list by walking left from the caret over plain-letter nodes (`wordLeftOfCaret()`), not from a tally of keystrokes: a tally can't tell when the caret moved or when an autoCommand already collapsed the letters, and the earlier tally-based version deleted one character too many for every lowercase Greek word (`x+pi` then Space gave `x\pi`). If you add a word to `SHORTHANDS`, make sure it is not also an autoCommand.
 
 **Expression history.** The last 20 copied/cleared expressions are kept in `localStorage` (key `history`) and navigated with `Alt+Up` / `Alt+Down`. Navigating swaps the field's LaTeX via `mf.latex(...)`; a `navigating` flag suppresses the edit handler so browsing history doesn't itself get treated as a new edit that resets the history cursor.
 
-**Always-on-top default is ON, at level `'floating'`.** Toggleable via the pin button (amber when active). State persists across sessions. The pinned/unpinned state is tracked in its own `pinned` variable in [main.js](src/main.js:32), not by querying `mainWindow.isAlwaysOnTop()` — that query didn't reliably reflect what was last set on Windows, which fed a wrong value into the toggle handler, the pin button's displayed state, and the save-on-close all at once (three symptoms, one bad source). Toggle, boot-sync (`window:get-pin-state`), and save-on-close all read/write that same variable now; nothing asks Electron for the current state.
+**Global hotkey `Ctrl+Alt+L` (`Cmd+Alt+L` on macOS)** summons/focuses the window from any app. Registered in `lib.rs`'s `setup` via `app.global_shortcut().on_shortcut(...)` rather than the plugin builder's `with_shortcuts`, so that a combination another app already owns logs an error and the app still starts, instead of failing plugin init.
 
-**Global hotkey `Ctrl+Alt+L`** summons/focuses the window from any app, registered in `app.whenReady()` in [main.js](src/main.js) via `globalShortcut`, unregistered on `will-quit`.
+**Light/dark theme toggle.** `[data-theme="light"]` on `<html>` swaps every CSS variable defined in the `:root` block in `styles.css`; the choice persists in `localStorage`. Dark is the default. Font size is applied directly to the MathQuill field element's `style.fontSize` and persisted in `localStorage`.
 
-**Window is frameless with a custom titlebar.** Drag region is the whole top bar (`-webkit-app-region: drag`), with `no-drag` overrides on the buttons and the opacity slider. Geometry and pin state persist to `%APPDATA%/latex-floater/floater-settings.json` on close, clamped to on-screen displays on next launch in case monitors changed. The saved geometry is `getPosition()`/`getSize()` minus a `geometrySlop` measured right after the window is created: on Windows at a fractional display scale Chromium creates the HWND a few physical pixels larger than requested and Electron rounds the readback up, so `getSize()` reports 3 to 5 DIP more than was asked for (verified at 175%: 620×380 requested, 623×383 reported, 1089×669 physical), and position rounds the other way by 1 DIP. Saving the readbacks verbatim made the window grow 3px and creep 1px up-left on every launch.
+**Packaging is an allow-list.** `scripts/vendor.js` copies exactly five files from `node_modules` into `src/vendor/`: `jquery.min.js`, `mathquill.min.js`, `mathquill.css`, `font/Symbola.woff2` (the only one of MathQuill's six Symbola formats that Chromium and WebKit actually pick from its `@font-face` list) and MathJax's `tex-svg.js`. It runs as `beforeDevCommand`/`beforeBuildCommand`. Nothing else from `node_modules` ships. If you add a runtime dependency, add it to that script.
 
-**Light/dark theme toggle.** `[data-theme="light"]` on `<html>` swaps every CSS variable defined in the `:root` block in `styles.css`; the choice persists in `localStorage`. Dark is the default.
-
-**Opacity and font-size controls live in the titlebar.** Opacity is applied via IPC (`window:set-opacity` → `mainWindow.setOpacity`, clamped to [0.2, 1] in main.js) rather than CSS, since it needs to affect the whole native window, not just page content. Font size is applied directly to the MathQuill field element's `style.fontSize` and persisted in `localStorage`.
-
-**IPC surface stays minimal.** If a renderer action can be done in the renderer, do it there. The preload bridge (`window.floater`) covers: `copyText`, `copyImage`, `togglePin`, `minimize`, `close`, `setOpacity`, `getPinState`, `renderPng`, and the `onFocus` event listener (used to refocus the math field when the window regains focus). The hidden capture window has its own separate, smaller bridge (`window.captureBridge`, from `capture-preload.js`): `onRender`, `reportSize` — kept apart from `window.floater` because it's a fundamentally different page with no UI of its own.
+**Content Security Policy** is set in `tauri.conf.json`: `'self'` for scripts, `'unsafe-inline'` for styles (MathQuill and MathJax write inline `style` attributes), `data:`/`blob:` for images (the SVG-to-canvas step uses a data URL). Tauri adds its own IPC origins automatically. If a new feature needs a remote resource, extend the CSP rather than disabling it.
 
 ## Conventions
 
-- **Comments explain the *why*, not the *what***. The existing source files are heavily commented specifically because the user wanted readable code; preserve this style. Prefer a paragraph at the top of each logical section over sprinkled inline comments.
+- **Comments explain the *why*, not the *what***. The source files are heavily commented specifically because the user wanted readable code; preserve this style. Prefer a paragraph at the top of each logical section over sprinkled inline comments. This applies to `lib.rs` too.
 - **No bullet-point overuse in user-facing copy** (README, errors, status messages). Write in sentences.
 - **CSS variables over hardcoded colors.** All theming goes through the `:root` (dark) and `[data-theme="light"]` blocks at the top of `styles.css`.
-- **MathQuill CSS overrides are compound selectors, and mathquill.css loads first.** MathQuill adds `mq-editable-field mq-math-mode` to the `#mf` element itself, so overrides of the field's own styling must be written `.editor__field.mq-editable-field` (no space). `index.html` links `mathquill.css` before `styles.css` so that on a specificity tie (including `!important` vs `!important`) the app's rules win. Descendant rules for things inside the field (`.mq-cursor`, `.mq-selection`, `.mq-root-block`) keep the space.
-- **IPC surface stays minimal.** See above.
+- **MathQuill CSS overrides are compound selectors, and mathquill.css loads first.** MathQuill adds `mq-editable-field mq-math-mode` to the `#mf` element itself, so overrides of the field's own styling must be written `.editor__field.mq-editable-field` (no space). `index.html` links `vendor/mathquill.css` before `styles.css` so that on a specificity tie (including `!important` vs `!important`) the app's rules win. Descendant rules for things inside the field (`.mq-cursor`, `.mq-selection`, `.mq-root-block`) keep the space.
+- **Native surface stays minimal.** If something can be done in the renderer, do it there. Adding a Rust command means adding it to `generate_handler!` in `lib.rs` and a wrapper in `bridge.js`; adding a Tauri window/plugin API call from JS means adding its permission to `capabilities/default.json`.
 - **Status messages use `flashStatus(msg, type)`** — don't invent new notification patterns.
+- **Files use CRLF line endings** (the repo was created on Windows). Keep new files consistent.
 
 ## Keyboard shortcuts (in `app.js`)
 
 - `Ctrl+Enter` → copy LaTeX (primary action)
 - `Ctrl+C` → copy LaTeX, but only when MathQuill has no active selection; if there's a selection, native copy behavior is left alone so only the highlighted portion is copied
-- `Esc` → copy current expression to history, then clear the field
+- `Esc` / `Ctrl+Backspace` → copy current expression to history, then clear the field
 - `Alt+Up` / `Alt+Down` → step backward/forward through expression history
+- `Ctrl+-` / `Ctrl+=` / `Ctrl+scroll` → font size
 - Clicking the TeX source readout bar also copies LaTeX instantly
 
 MathQuill's own shortcuts (`/` for fraction, autocommands for `pi`, `theta`, `sqrt`, etc. per the `autoCommands`/`autoOperatorNames` config in `app.js`) are active inside the math field, alongside the app's own typed-word `SHORTHANDS` substitution.
 
 ## Things that are intentionally NOT in v1 (or were removed/abandoned)
 
-- **No symbol palette.** Earlier design intent called for one; it isn't in the current UI. If it's wanted, it would need to be built from scratch — there's no dormant palette code to resurrect.
-- **No MathML export.** The `temml` dependency exists but is unused dead weight — either wire it up or remove it from `package.json`/`build.files`.
+- **No symbol palette.** If it's wanted, it would need to be built from scratch — there's no dormant palette code to resurrect.
+- **No MathML export.** Was planned; the `temml` dependency bought for it was removed. If it's ever wanted, MathJax (already vendored for PNG) can also emit MathML, so no new dependency would be needed.
 - **No LaTeX preamble management.** Users paste the output into their own document where preamble lives.
 - **No equation numbering, alignment environments.** MathQuill's default command set doesn't include a matrix/cases UI, and none has been added here.
-- **No cloud sync of settings.** The settings file is local. That's fine for a single-user utility.
+- **No cloud sync of settings.** Everything is local (`localStorage` plus the window-state plugin's file).
+- **No Electron.** Removed 2026-09-20. `git log` before that date shows the old `main.js`/`preload.js`/`capture.*` if ever needed for reference.
 
 ## Open threads / likely next asks
 
-1. **Decide the fate of `temml` and MathML export** — either implement Copy MathML (temml can render LaTeX → MathML string) or drop the dependency.
-2. **Decide the fate of the symbol palette** — earlier project intent wanted one; current UI doesn't have it. Worth confirming whether it's still wanted before building it.
-3. **Packaged `.exe` distribution.** `dist/win-unpacked` already exists from a prior `npm run dist` / `npm run pack` run, but the installer path (code signing, icon) is likely still untested end-to-end.
+1. **First macOS build and run.** The Rust code has only been built for Windows. A `cargo check --target aarch64-apple-darwin` from Windows stops early because a dependency's build script needs a C compiler for the Darwin target, which this machine doesn't have, so the macOS branch of `set_opacity` (the `objc2-app-kit` `setAlphaValue` call) is unverified even at the type level. Things to check on the Mac: it compiles; opacity works; the `Cmd+Alt+L` hotkey; drag region and resize on an undecorated window; PNG export via `tex2svg` → canvas in WKWebView; and that the `.dmg` bundle opens (unsigned apps need right-click → Open the first time).
+2. **Code signing.** Neither platform's installer is signed. Windows SmartScreen will warn on first run; macOS Gatekeeper will require the right-click → Open dance. Fine for a couple of friends; not fine for wider distribution.
+3. **Decide the fate of the symbol palette** — earlier project intent wanted one; current UI doesn't have it.
 4. **Matrix/cases/align environments** — no UI support currently; would need either palette-style buttons or more MathQuill commands wired into `autoCommands`.
+5. **Known minor issues from the 2026-09-20 audit, not yet fixed:** focus leaves the math field after clicking Copy LaTeX / PNG / pin / the TeX bar (they don't call `mf.focus()`); copying a history entry shifts the history cursor; `Ctrl+C` with Caps Lock on isn't caught; tall/wide expressions are clipped with no scrolling in the editor.
 
 ## Running locally
 
 ```powershell
 npm install
-npm start
+npm run dev      # tauri dev: hot-reloads src/, rebuilds Rust on change
+npm run build    # installers in src-tauri/target/release/bundle/
 ```
 
-First install pulls Electron (~150MB) plus MathQuill and jQuery. Subsequent starts are fast.
+Requires Node 18+, Rust (rustup), and on Windows the MSVC build tools (any Visual Studio with "Desktop development with C++"); on macOS, Xcode command line tools. The first build compiles ~400 crates and takes several minutes; later builds take seconds. On this Windows machine, cargo lives in `%USERPROFILE%\.cargo\bin` — if a shell can't find it, add that to `PATH`.
 
 ## If something breaks
 
-- **MathQuill not loading**: check the script src paths in `index.html` — they point to `../node_modules/jquery/dist/jquery.min.js` and `../node_modules/mathquill/build/mathquill.min.js`, which only resolve during `npm start` from the project root. A packaged build relies on `electron-builder` copying `node_modules/mathquill/build/**/*` and the jQuery file per the `build.files` glob in `package.json`.
-- **Math field styling looks broken** (a gray border or blue glow around the field, system-blue selection, cursor color or font color not following theme): the `.editor__field.mq-editable-field` / `.mq-cursor` / `.mq-selection` / `.mq-root-block` overrides in `styles.css` are the first suspect — a MathQuill version bump could rename these classes, and the stylesheet order in `index.html` (mathquill.css first) must hold. The same applies to the `#mf` rule in `capture.html`, which is what keeps the border out of exported PNGs.
-- **Window appearing off-screen**: delete `%APPDATA%/latex-floater/floater-settings.json`. The main process clamps saved coords to current displays but this is a safety valve.
-- **PNG export producing empty/broken/cropped images**: the flow spans three files now — `copyPng()` in `app.js` (calls `renderPng`), the `png:render` handler in `main.js` (owns the hidden capture window, the `setContentSize` call, and the `capture:size-reported` wait), and `capture.js` (measures `#mf`'s `getBoundingClientRect()` and reports it back). If the image is cropped, suspect the measurement in `capture.js` first — it depends on `capture.html` never constraining `#mf` to a percentage width; if that page's CSS changes, re-verify the shrink-to-fit behavior still holds.
-- **Global hotkey not firing**: `Ctrl+Alt+L` is registered once in `app.whenReady()` in `main.js`; if another app already holds that combination, `globalShortcut.register` silently fails to bind it.
+- **Blank window or "MathQuill is not defined"**: `src/vendor/` is missing or stale. Run `npm run vendor` (it also runs automatically before dev/build). The script paths in `index.html` are relative to `src/`.
+- **`window.__TAURI__` is undefined**: `app.withGlobalTauri` was turned off in `tauri.conf.json`, or the page is being opened directly in a browser rather than inside the app.
+- **A titlebar button or drag does nothing, with a permission error in the devtools console**: the corresponding `core:window:allow-*` permission is missing from `capabilities/default.json`.
+- **Math field styling looks broken** (a gray border or blue glow around the field, system-blue selection, cursor color or font color not following theme): the `.editor__field.mq-editable-field` / `.mq-cursor` / `.mq-selection` / `.mq-root-block` overrides in `styles.css` are the first suspect — a MathQuill version bump could rename these classes, and the stylesheet order in `index.html` (mathquill.css first) must hold.
+- **Window appearing off-screen or at a stale size**: delete the window-state plugin's file — `%APPDATA%\com.local.latexfloater\.window-state.json` on Windows, `~/Library/Application Support/com.local.latexfloater/.window-state.json` on macOS.
+- **PNG export shows "PNG export failed"**: open devtools (right-click is disabled in the UI; use `npm run dev`, where devtools open with `Ctrl+Shift+I`/`Cmd+Option+I`) and look for a MathJax load error (`vendor/tex-svg.js` missing → run `npm run vendor`) or a CSP violation on the `data:` image (the `img-src` directive in `tauri.conf.json` must allow `data:`).
+- **Opacity slider does nothing**: `set_opacity` in `lib.rs` is platform-specific; on an unsupported platform it's a no-op by design. On Windows check that `window.hwnd()` succeeded; on macOS that the call is reaching the main thread.
+- **Global hotkey not firing**: registration errors are printed to stderr at startup (visible under `npm run dev`). If another app already holds `Ctrl+Alt+L`, the app runs without a hotkey rather than failing.
+- **Rust build fails on Windows with a linker error**: MSVC build tools aren't installed or not the x64 variant. On macOS, `xcode-select --install`.

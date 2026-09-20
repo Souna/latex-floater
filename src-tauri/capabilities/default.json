@@ -1,0 +1,14 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "What the main window's JS may ask of the native side: the titlebar buttons, the drag region, and the focus event used to refocus the math field. The app's own commands (copy_text, copy_image, set_opacity) are allowed implicitly.",
+  "windows": ["main"],
+  "permissions": [
+    "core:default",
+    "core:window:allow-minimize",
+    "core:window:allow-close",
+    "core:window:allow-set-always-on-top",
+    "core:window:allow-start-dragging",
+    "core:window:allow-set-focus"
+  ]
+}

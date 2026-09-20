@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <!-- App icon source. `npx tauri icon src-tauri/icons/source.svg` regenerates
+       every platform size from this file. Dark rounded tile, amber fraction
+       bar with a dot above and below: the app's accent colour and its most
+       typed structure. -->
+  <rect x="0" y="0" width="1024" height="1024" rx="224" fill="#12131a"/>
+  <rect x="232" y="482" width="560" height="60" rx="30" fill="#d4a45c"/>
+  <circle cx="512" cy="330" r="82" fill="#e4e6ee"/>
+  <circle cx="512" cy="694" r="82" fill="#e4e6ee"/>
+</svg>

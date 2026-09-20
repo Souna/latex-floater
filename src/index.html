@@ -4,7 +4,11 @@
   <meta charset="UTF-8" />
   <title>LaTeX Floater</title>
 
-  <!-- mathquill.css must come BEFORE styles.css: several of our overrides of
+  <!-- Third-party files come from vendor/, which scripts/vendor.js fills from
+       node_modules before every dev run and build — Tauri bundles this
+       directory as-is, so nothing outside it can be referenced.
+
+       mathquill.css must come BEFORE styles.css: several of our overrides of
        MathQuill's field styling tie with its own rules on specificity (some
        on both sides are !important), and in a tie the later stylesheet wins.
        With the order reversed, MathQuill's border, focus glow and system-blue
@@ -14,18 +18,21 @@
        Mono is used for the "LaTeX source" readout; sans for everything else.
        The @font-face rules (self-hosted, src/fonts/) live in styles.css —
        see the comment there for why this isn't loaded from Google Fonts. -->
-  <link rel="stylesheet" href="../node_modules/mathquill/build/mathquill.css">
+  <link rel="stylesheet" href="vendor/mathquill.css">
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
   <!-- =================================================================
        Title bar. The drag region spans the top and lets the user move
-       the window. Buttons are marked no-drag so clicks register.
+       the window. Tauri starts a native drag on mousedown of any element
+       carrying data-tauri-drag-region — and only that element, not its
+       children — so the bar and each piece of the brand carry it, while
+       the buttons and slider on the right don't and so still get clicks.
        ================================================================= -->
-  <header class="titlebar">
-    <div class="titlebar__brand">
-      <span class="titlebar__dot" aria-hidden="true"></span>
-      <span class="titlebar__name">LaTeX Floater</span>
+  <header class="titlebar" data-tauri-drag-region>
+    <div class="titlebar__brand" data-tauri-drag-region>
+      <span class="titlebar__dot" aria-hidden="true" data-tauri-drag-region></span>
+      <span class="titlebar__name" data-tauri-drag-region>LaTeX Floater</span>
     </div>
     <div class="titlebar__controls">
       <button id="btn-theme" class="titlebar__btn" title="Toggle light/dark theme">
@@ -78,7 +85,7 @@
   </section>
 
   <!-- =================================================================
-       Action row. Copy LaTeX is primary; MathML and PNG are secondary.
+       Action row. Copy LaTeX is primary; PNG is the fallback.
        ================================================================= -->
   <footer class="actions">
     <button id="copy-latex"  class="btn btn--primary">Copy LaTeX</button>
@@ -86,8 +93,10 @@
     <div class="actions__status" id="status" aria-live="polite"></div>
   </footer>
 
-  <script src="../node_modules/jquery/dist/jquery.min.js"></script>
-  <script src="../node_modules/mathquill/build/mathquill.min.js"></script>
-<script src="app.js"></script>
+  <script src="vendor/jquery.min.js"></script>
+  <script src="vendor/mathquill.min.js"></script>
+  <!-- bridge.js defines window.floater; app.js is written against it. -->
+  <script src="bridge.js"></script>
+  <script src="app.js"></script>
 </body>
 </html>

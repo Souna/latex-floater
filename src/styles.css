@@ -114,7 +114,6 @@ body {
    ========================================================================= */
 
 .titlebar {
-  -webkit-app-region: drag;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -148,7 +147,6 @@ body {
   display: flex;
   gap: 2px;
   align-items: center;
-  -webkit-app-region: no-drag;
 }
 
 .titlebar__btn {
@@ -170,7 +168,6 @@ body {
 .titlebar__btn--font { width: auto; padding: 0 5px; font-size: 10px; font-family: inherit; }
 
 .titlebar__opacity {
-  -webkit-app-region: no-drag;
   width: 56px;
   height: 3px;
   accent-color: var(--accent);

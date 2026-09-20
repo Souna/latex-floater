@@ -1,51 +1,21 @@
 {
   "name": "latex-floater",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "A small always-on-top desktop window for writing LaTeX fast, Symbolab-style.",
-  "main": "src/main.js",
   "scripts": {
-    "start": "electron .",
-    "pack": "electron-builder --dir",
-    "dist:win": "electron-builder --win",
-    "dist:mac": "electron-builder --mac",
-    "dist": "electron-builder"
+    "vendor": "node scripts/vendor.js",
+    "start": "tauri dev",
+    "dev": "tauri dev",
+    "build": "tauri build",
+    "tauri": "tauri"
   },
   "devDependencies": {
-    "electron": "^32.0.0",
-    "electron-builder": "^25.0.0"
-  },
-  "build": {
-    "appId": "com.local.latexfloater",
-    "productName": "LaTeX Floater",
-    "directories": {
-      "output": "dist"
-    },
-    "files": [
-      "src/**/*",
-      "node_modules/mathquill/build/**/*",
-      "node_modules/jquery/dist/jquery.min.js",
-      "node_modules/temml/dist/temml.min.js"
-    ],
-    "asarUnpack": [
-      "node_modules/mathquill/build/font/**/*"
-    ],
-    "win": {
-      "target": "nsis"
-    },
-    "nsis": {
-      "oneClick": false,
-      "allowToChangeInstallationDirectory": true,
-      "createDesktopShortcut": true,
-      "createStartMenuShortcut": true
-    },
-    "mac": {
-      "target": "dmg",
-      "category": "public.app-category.utilities"
-    }
+    "@tauri-apps/cli": "^2.11.5"
   },
   "dependencies": {
     "jquery": "^4.0.0",
-    "mathquill": "^0.10.1-a",
-    "temml": "^0.13.2"
-  }
+    "mathjax": "^3.2.2",
+    "mathquill": "^0.10.1-a"
+  },
+  "private": true
 }

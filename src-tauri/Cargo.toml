@@ -1,0 +1,40 @@
+[package]
+name = "latex-floater"
+version = "0.2.0"
+description = "A small always-on-top desktop window for writing LaTeX fast."
+edition = "2021"
+
+# Tauri's standard split: the app lives in a library crate so the same code
+# can be linked as a binary here and, if it's ever wanted, as a mobile lib.
+[lib]
+name = "latex_floater_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+# image-png: lets tauri::image::Image decode the PNG the renderer produces
+# for the clipboard. Nothing else in tauri's feature set is needed.
+tauri = { version = "2", features = ["image-png"] }
+tauri-plugin-clipboard-manager = "2"
+tauri-plugin-global-shortcut = "2"
+tauri-plugin-window-state = "2"
+base64 = "0.22"
+
+# Window opacity has no cross-platform API in tauri/tao, so set_opacity in
+# lib.rs talks to the native window directly on each platform.
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.59", features = ["Win32_Foundation", "Win32_UI_WindowsAndMessaging"] }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2-app-kit = { version = "0.3", features = ["NSWindow", "NSResponder"] }
+
+# Size over speed: this app does nothing CPU-bound, so trade codegen
+# parallelism and inlining for a smaller binary.
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = "s"
+panic = "abort"
+strip = true

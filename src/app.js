@@ -116,11 +116,11 @@ async function copyLatex() {
   flashStatus(`copied LaTeX (${latex.length} chars)`);
 }
 
-// PNG export: rendered entirely off-screen (see src/capture.html/js and the
-// png:render handler in main.js) so a wide or tall expression never has to
-// resize the real, visible app window — the invisible capture window grows
-// or shrinks to fit instead. Also sidesteps needing to flip this window's
-// theme colors, since the capture page is always white-background/dark-text.
+// PNG export: window.floater.renderPng (bridge.js) rasterises the LaTeX
+// in-page via MathJax's SVG output and hands back a PNG data URL, which
+// copyImage ships to the native clipboard. The export is always
+// white-background/dark-text regardless of the app theme, since the image
+// isn't meant to carry the UI's colours.
 async function copyPng() {
   const latex = mf.latex() || '';
   if (!latex.trim()) return flashStatus('empty — nothing to copy', 'error');
@@ -174,6 +174,17 @@ const clearField = async () => {
   mf.focus();
 };
 document.getElementById('btn-clear').addEventListener('click', clearField);
+
+// The math field is a 40px strip vertically centred in a much taller editor
+// area. Clicking the empty space around it used to move focus to <body>,
+// after which typing went nowhere until the user found the strip. Treat a
+// click anywhere in the editor box as a click into the field.
+document.querySelector('.editor').addEventListener('mousedown', (e) => {
+  if (mqEl.contains(e.target) || e.target.closest('#btn-clear')) return;
+  e.preventDefault();
+  mf.focus();
+  mf.moveToRightEnd();
+});
 
 // ---------------------------------------------------------------------------
 // Shorthand substitution.
