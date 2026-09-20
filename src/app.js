@@ -83,7 +83,7 @@ const mf = MQ.MathField(mqEl, {
   // the paren's closer instead of opening its own abs-value pair. Restricting
   // mismatched brackets makes '|' only pair with another '|'.
   restrictMismatchedBrackets: true,
-  autoCommands: 'pi theta phi alpha beta gamma delta epsilon zeta eta iota kappa lambda mu nu xi rho sigma tau upsilon chi psi omega infty sqrt',
+  autoCommands: 'pi theta phi alpha beta gamma delta epsilon zeta eta iota kappa lambda mu nu xi rho sigma tau upsilon chi psi omega infty sqrt int sum prod',
   autoOperatorNames: 'sin cos tan cot sec csc sinh cosh tanh arcsin arccos arctan log ln det lim',
   handlers: {
     edit: () => {
