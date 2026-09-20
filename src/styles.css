@@ -197,31 +197,36 @@ body {
   transition: background 0.15s;
 }
 
-.editor__field {
+/* MathQuill puts its "mq-editable-field mq-math-mode" classes on the #mf
+   element ITSELF (it doesn't wrap it), so every override of MathQuill's
+   field styling has to be a compound selector on that same element —
+   ".editor__field.mq-editable-field" — not a descendant one. An earlier
+   version used ".editor__field .mq-editable-field" (with a space), which
+   matched nothing, so MathQuill's stock 1px gray border and blue focus glow
+   were showing the whole time. Where specificities tie, source order decides:
+   mathquill.css is linked BEFORE this file in index.html for exactly that
+   reason, so the rules below win even against MathQuill's own !important
+   selection colours. */
+.editor__field,
+.editor__field.mq-editable-field {
   flex: 1;
   width: 100%;
   min-height: 40px;
+  margin: 0;
+  padding: 0 !important;
+  border: none !important;
+  box-shadow: none !important;
+  background: transparent !important;
   font-size: 18px;
-  color: var(--fg);
-  background: transparent;
+  color: var(--fg) !important;
   cursor: text;
   display: flex;
   align-items: center;
 }
 
-.editor__field .mq-editable-field {
+.editor__field.mq-editable-field.mq-focused,
+.editor__field.mq-editable-field:focus {
   border: none !important;
-  box-shadow: none !important;
-  background: transparent !important;
-  color: var(--fg) !important;
-  width: 100%;
-  min-height: 40px;
-  display: flex;
-  align-items: center;
-  padding: 0 !important;
-}
-
-.editor__field .mq-editable-field:focus {
   box-shadow: none !important;
   outline: none !important;
 }
@@ -230,10 +235,13 @@ body {
   border-color: var(--accent) !important;
 }
 
+.editor__field .mq-selection,
 .editor__field .mq-selection .mq-non-leaf,
-.editor__field .mq-selection .mq-leaf {
+.editor__field .mq-selection .mq-leaf,
+.editor__field .mq-selection .mq-scaled {
   background: var(--accent-soft) !important;
   color: var(--fg) !important;
+  border-color: var(--fg) !important;
 }
 
 /* MathQuill renders math symbols in the inherited color. Force it to follow

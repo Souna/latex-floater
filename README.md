@@ -6,7 +6,7 @@ A small always-on-top desktop window for writing LaTeX fast. Type directly into 
 
 - Always-on-top frameless window (remembers its position and size between sessions)
 - MathQuill-powered editor with direct typing — `\frac`, `\sqrt`, `^`, `_`, and typed Greek-letter/function names all work as you'd expect
-- Typed shorthand substitution: type a word like `alpha`, `theta`, or `inf` and press Space to turn it into `\alpha`, `\theta`, `\infty`
+- Typed shorthand substitution: lowercase Greek names like `alpha` and `theta` become `\alpha` and `\theta` as soon as you finish typing them; `inf` and uppercase Greek names like `Gamma` substitute when you press Space
 - Live LaTeX source readout under the editor, click it to copy instantly
 - Expression history — step back through your last 20 expressions with `Alt+Up` / `Alt+Down`
 - Two output formats:

@@ -24,8 +24,14 @@
       display: inline-block;
       padding: 16px;
       font-size: 32px;
+      /* MathQuill adds its mq-editable-field class to #mf itself, so its
+         default 1px gray border has to be cancelled on this very rule — an
+         earlier "#mf .mq-editable-field" descendant selector never matched
+         and every exported PNG carried that border. */
+      border: none;
+      box-shadow: none;
+      margin: 0;
     }
-    #mf .mq-editable-field { border: none !important; box-shadow: none !important; }
     #mf .mq-root-block, #mf .mq-root-block * { color: #111111 !important; }
   </style>
 </head>

@@ -4,12 +4,18 @@
   <meta charset="UTF-8" />
   <title>LaTeX Floater</title>
 
-  <!-- IBM Plex gives us a characterful sans + mono pair without going generic.
+  <!-- mathquill.css must come BEFORE styles.css: several of our overrides of
+       MathQuill's field styling tie with its own rules on specificity (some
+       on both sides are !important), and in a tie the later stylesheet wins.
+       With the order reversed, MathQuill's border, focus glow and system-blue
+       selection colour beat ours — see the .editor__field comment in styles.css.
+
+       IBM Plex gives us a characterful sans + mono pair without going generic.
        Mono is used for the "LaTeX source" readout; sans for everything else.
        The @font-face rules (self-hosted, src/fonts/) live in styles.css —
        see the comment there for why this isn't loaded from Google Fonts. -->
-  <link rel="stylesheet" href="styles.css">
   <link rel="stylesheet" href="../node_modules/mathquill/build/mathquill.css">
+  <link rel="stylesheet" href="styles.css">
 </head>
 <body>
   <!-- =================================================================

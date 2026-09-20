@@ -33,6 +33,14 @@ let mainWindow = null;
 // own flag and treating it as authoritative sidesteps that entirely.
 let pinned = true;
 
+// How far getPosition()/getSize() differ from the geometry we asked for at
+// creation. Measured once in createWindow() and subtracted again on save —
+// see the comment there for the Windows/DPI quirk this cancels out.
+let geometrySlop = { x: 0, y: 0, width: 0, height: 0 };
+
+const MIN_WIDTH = 480;
+const MIN_HEIGHT = 280;
+
 function createWindow() {
   const saved = loadSettings();
   pinned = saved.pinned !== false;   // default ON — that's the whole point of this app
@@ -43,6 +51,18 @@ function createWindow() {
 
   // Clamp any saved bounds to the current display in case monitors changed.
   let bounds = { ...defaultBounds, ...(saved.bounds || {}) };
+
+  // A hand-edited or corrupted settings file must not be able to throw in
+  // the BrowserWindow constructor and kill startup. Anything that isn't a
+  // sane number falls back to the default, and the size is held to the same
+  // minimums the window enforces so the slop measurement below compares
+  // like with like.
+  if (!Number.isFinite(bounds.width))  bounds.width  = defaultBounds.width;
+  if (!Number.isFinite(bounds.height)) bounds.height = defaultBounds.height;
+  bounds.width  = Math.max(MIN_WIDTH,  Math.round(bounds.width));
+  bounds.height = Math.max(MIN_HEIGHT, Math.round(bounds.height));
+  if (!Number.isFinite(bounds.x) || !Number.isFinite(bounds.y)) { delete bounds.x; delete bounds.y; }
+
   const displays = screen.getAllDisplays();
   const onScreen = displays.some(d => {
     const a = d.workArea;
@@ -54,8 +74,8 @@ function createWindow() {
 
   mainWindow = new BrowserWindow({
     ...bounds,
-    minWidth: 480,
-    minHeight: 280,
+    minWidth: MIN_WIDTH,
+    minHeight: MIN_HEIGHT,
     frame: false,             // custom title bar; lets us make the whole top edge draggable
     transparent: false,
     alwaysOnTop: pinned,
@@ -75,6 +95,30 @@ function createWindow() {
   // with normal apps while still staying on top of them.
   mainWindow.setAlwaysOnTop(pinned, 'floating');
 
+  // On Windows at a fractional display scale (verified at 175%), the window
+  // geometry Electron reads back is not the geometry it was asked for.
+  // Chromium creates the native window a few physical pixels larger than the
+  // DIP size requested — 620x380 DIP is 1085x665 px at 1.75, but the HWND
+  // comes back 1089x669 — and Electron then rounds that back up to whole
+  // DIPs, so getSize() reports 623x383 (or 625x385, depending on where the
+  // window sits) for a window we asked to be 620x380. Position goes the
+  // other way: a requested x of 786 becomes 1375.5 px, is floored, and reads
+  // back as 785. The close handler used to save those readbacks verbatim and
+  // the next launch fed them straight back in, so the window grew 3px in
+  // each direction and crept 1px up and left on every launch, forever.
+  // Measuring the discrepancy once, right here, and subtracting it again on
+  // save makes the round trip stable. If a future Electron stops doing this,
+  // the measured slop is simply zero. Position slop is only measurable when
+  // we asked for a position; a centered first launch leaves it at zero.
+  const [createdX, createdY] = mainWindow.getPosition();
+  const [createdWidth, createdHeight] = mainWindow.getSize();
+  geometrySlop = {
+    x: bounds.x != null ? createdX - bounds.x : 0,
+    y: bounds.y != null ? createdY - bounds.y : 0,
+    width:  createdWidth  - bounds.width,
+    height: createdHeight - bounds.height
+  };
+
   mainWindow.loadFile(path.join(__dirname, 'index.html'));
 
   // Persist window geometry and pin state on close.
@@ -86,7 +130,12 @@ function createWindow() {
     const current = loadSettings();
     saveSettings({
       ...current,
-      bounds: { x, y, width, height },
+      bounds: {
+        x: x - geometrySlop.x,
+        y: y - geometrySlop.y,
+        width:  width  - geometrySlop.width,
+        height: height - geometrySlop.height
+      },
       pinned
     });
 

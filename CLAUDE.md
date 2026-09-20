@@ -1,6 +1,6 @@
 # CLAUDE.md — project briefing for Claude Code
 
-This file is auto-read at the start of every Claude Code session in this directory. It describes the codebase **as it currently exists** (last verified 2026-09-16 by reading every file in `src/`). If you're about to say something here doesn't match what you see in `src/`, trust the code — update this file, don't argue with it.
+This file is auto-read at the start of every Claude Code session in this directory. It describes the codebase **as it currently exists** (last verified 2026-09-20 by reading every file in `src/`). If you're about to say something here doesn't match what you see in `src/`, trust the code — update this file, don't argue with it.
 
 ## What this project is
 
@@ -48,7 +48,7 @@ This replaced an earlier version that resized the *visible* app window to fit ov
 
 The capture window is intentionally never shown and is reused across exports rather than recreated each time (avoids ~200ms of window/page startup cost per export). It always renders white-background/dark-text regardless of the app's current light/dark theme, since the exported image isn't meant to carry the app's UI theme.
 
-**No palette — direct typing plus shorthand substitution instead.** Rather than clickable buttons, the app supports typing a bare word (`alpha`, `theta`, `inf`, ...) and pressing Space to substitute it for the LaTeX command (`\alpha`, `\theta`, `\infty`, ...). This is implemented as a capture-phase `keydown` listener in [app.js](src/app.js) that tracks a rolling letter buffer and intercepts Space before MathQuill consumes it. The `SHORTHANDS` map at the top of that section is the place to add more.
+**No palette — direct typing plus shorthand substitution instead.** Rather than clickable buttons, the app supports typing a bare word and having it become the LaTeX command. Two mechanisms do this and they must not overlap. Lowercase Greek letters, `infty` and `sqrt` are MathQuill `autoCommands` (configured in the `MQ.MathField` options in [app.js](src/app.js)) and convert the instant the last letter is typed, no Space needed. Words MathQuill won't handle itself — `inf` and the uppercase Greek letters — live in the `SHORTHANDS` map and convert when the user presses Space, via a capture-phase `keydown` listener that intercepts Space before MathQuill consumes it. On Space, the word to replace is read back from MathQuill's node list by walking left from the caret over plain-letter nodes (`wordLeftOfCaret()`), not from a tally of keystrokes: a tally can't tell when the caret moved or when an autoCommand already collapsed the letters, and the earlier tally-based version deleted one character too many for every lowercase Greek word (`x+pi` then Space gave `x\pi`). If you add a word to `SHORTHANDS`, make sure it is not also an autoCommand.
 
 **Expression history.** The last 20 copied/cleared expressions are kept in `localStorage` (key `history`) and navigated with `Alt+Up` / `Alt+Down`. Navigating swaps the field's LaTeX via `mf.latex(...)`; a `navigating` flag suppresses the edit handler so browsing history doesn't itself get treated as a new edit that resets the history cursor.
 
@@ -56,7 +56,7 @@ The capture window is intentionally never shown and is reused across exports rat
 
 **Global hotkey `Ctrl+Alt+L`** summons/focuses the window from any app, registered in `app.whenReady()` in [main.js](src/main.js) via `globalShortcut`, unregistered on `will-quit`.
 
-**Window is frameless with a custom titlebar.** Drag region is the whole top bar (`-webkit-app-region: drag`), with `no-drag` overrides on the buttons and the opacity slider. Geometry and pin state persist to `%APPDATA%/latex-floater/floater-settings.json` on close, clamped to on-screen displays on next launch in case monitors changed.
+**Window is frameless with a custom titlebar.** Drag region is the whole top bar (`-webkit-app-region: drag`), with `no-drag` overrides on the buttons and the opacity slider. Geometry and pin state persist to `%APPDATA%/latex-floater/floater-settings.json` on close, clamped to on-screen displays on next launch in case monitors changed. The saved geometry is `getPosition()`/`getSize()` minus a `geometrySlop` measured right after the window is created: on Windows at a fractional display scale Chromium creates the HWND a few physical pixels larger than requested and Electron rounds the readback up, so `getSize()` reports 3 to 5 DIP more than was asked for (verified at 175%: 620×380 requested, 623×383 reported, 1089×669 physical), and position rounds the other way by 1 DIP. Saving the readbacks verbatim made the window grow 3px and creep 1px up-left on every launch.
 
 **Light/dark theme toggle.** `[data-theme="light"]` on `<html>` swaps every CSS variable defined in the `:root` block in `styles.css`; the choice persists in `localStorage`. Dark is the default.
 
@@ -69,6 +69,7 @@ The capture window is intentionally never shown and is reused across exports rat
 - **Comments explain the *why*, not the *what***. The existing source files are heavily commented specifically because the user wanted readable code; preserve this style. Prefer a paragraph at the top of each logical section over sprinkled inline comments.
 - **No bullet-point overuse in user-facing copy** (README, errors, status messages). Write in sentences.
 - **CSS variables over hardcoded colors.** All theming goes through the `:root` (dark) and `[data-theme="light"]` blocks at the top of `styles.css`.
+- **MathQuill CSS overrides are compound selectors, and mathquill.css loads first.** MathQuill adds `mq-editable-field mq-math-mode` to the `#mf` element itself, so overrides of the field's own styling must be written `.editor__field.mq-editable-field` (no space). `index.html` links `mathquill.css` before `styles.css` so that on a specificity tie (including `!important` vs `!important`) the app's rules win. Descendant rules for things inside the field (`.mq-cursor`, `.mq-selection`, `.mq-root-block`) keep the space.
 - **IPC surface stays minimal.** See above.
 - **Status messages use `flashStatus(msg, type)`** — don't invent new notification patterns.
 
@@ -109,7 +110,7 @@ First install pulls Electron (~150MB) plus MathQuill and jQuery. Subsequent star
 ## If something breaks
 
 - **MathQuill not loading**: check the script src paths in `index.html` — they point to `../node_modules/jquery/dist/jquery.min.js` and `../node_modules/mathquill/build/mathquill.min.js`, which only resolve during `npm start` from the project root. A packaged build relies on `electron-builder` copying `node_modules/mathquill/build/**/*` and the jQuery file per the `build.files` glob in `package.json`.
-- **Math field styling looks broken** (cursor color, selection highlight, font color not following theme): the `.mq-editable-field` / `.mq-cursor` / `.mq-selection` / `.mq-root-block` overrides in `styles.css` are the first suspect — a MathQuill version bump could rename these classes.
+- **Math field styling looks broken** (a gray border or blue glow around the field, system-blue selection, cursor color or font color not following theme): the `.editor__field.mq-editable-field` / `.mq-cursor` / `.mq-selection` / `.mq-root-block` overrides in `styles.css` are the first suspect — a MathQuill version bump could rename these classes, and the stylesheet order in `index.html` (mathquill.css first) must hold. The same applies to the `#mf` rule in `capture.html`, which is what keeps the border out of exported PNGs.
 - **Window appearing off-screen**: delete `%APPDATA%/latex-floater/floater-settings.json`. The main process clamps saved coords to current displays but this is a safety valve.
 - **PNG export producing empty/broken/cropped images**: the flow spans three files now — `copyPng()` in `app.js` (calls `renderPng`), the `png:render` handler in `main.js` (owns the hidden capture window, the `setContentSize` call, and the `capture:size-reported` wait), and `capture.js` (measures `#mf`'s `getBoundingClientRect()` and reports it back). If the image is cropped, suspect the measurement in `capture.js` first — it depends on `capture.html` never constraining `#mf` to a percentage width; if that page's CSS changes, re-verify the shrink-to-fit behavior still holds.
 - **Global hotkey not firing**: `Ctrl+Alt+L` is registered once in `app.whenReady()` in `main.js`; if another app already holds that combination, `globalShortcut.register` silently fails to bind it.

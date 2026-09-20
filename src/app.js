@@ -181,36 +181,51 @@ document.getElementById('btn-clear').addEventListener('click', clearField);
 // When the user types a word from this map and then presses Space, we delete
 // the typed letters and replace them with the LaTeX symbol. This runs in the
 // capture phase so we intercept Space before MathQuill does — necessary because
-// spaceBehavesLikeTab would otherwise consume the Space before autoCommands
-// gets a chance to fire.
+// spaceBehavesLikeTab would otherwise consume the Space before we see it.
+//
+// Lowercase Greek letters are deliberately NOT in this map. MathQuill's own
+// autoCommands (configured above) already turn "pi", "theta", "alpha", ...
+// into the symbol the instant the last letter is typed, so by the time Space
+// arrives there are no letters left to replace. An earlier version listed
+// them here anyway and kept its own tally of letters typed, then sent that
+// many Backspaces on Space — the first deleted the already-substituted
+// symbol and the rest ate whatever came before it, so "x+pi " came out as
+// "x\pi". Only put words here that MathQuill won't substitute by itself.
 // ---------------------------------------------------------------------------
 
 const SHORTHANDS = {
   // Custom (no matching LaTeX command name)
   'inf':     '\\infty',
-  // Greek lowercase
-  'alpha':   '\\alpha',   'beta':    '\\beta',    'gamma':   '\\gamma',
-  'delta':   '\\delta',   'epsilon': '\\epsilon', 'zeta':    '\\zeta',
-  'eta':     '\\eta',     'theta':   '\\theta',   'iota':    '\\iota',
-  'kappa':   '\\kappa',   'lambda':  '\\lambda',  'mu':      '\\mu',
-  'nu':      '\\nu',      'xi':      '\\xi',      'pi':      '\\pi',
-  'rho':     '\\rho',     'sigma':   '\\sigma',   'tau':     '\\tau',
-  'upsilon': '\\upsilon', 'phi':     '\\phi',     'chi':     '\\chi',
-  'psi':     '\\psi',     'omega':   '\\omega',
-  // Greek uppercase
+  // Greek uppercase — no MathQuill autoCommand covers these.
   'Gamma':   '\\Gamma',   'Delta':   '\\Delta',   'Theta':   '\\Theta',
   'Lambda':  '\\Lambda',  'Xi':      '\\Xi',      'Pi':      '\\Pi',
   'Sigma':   '\\Sigma',   'Upsilon': '\\Upsilon', 'Phi':     '\\Phi',
   'Psi':     '\\Psi',     'Omega':   '\\Omega',
 };
 
-let letterBuffer = '';
+// The word to substitute is read back from MathQuill's own node list at the
+// moment Space is pressed, rather than from a running tally of keystrokes.
+// A keystroke tally can't tell when the caret moved (mouse click, history
+// navigation, an autoCommand collapsing letters into one symbol) and would
+// then delete the wrong number of things. Walking left from the caret over
+// plain-letter nodes always reflects exactly what is about to be replaced.
+// `ctrlSeq === letter` is the same test MathQuill uses internally to skip
+// letters already absorbed into an operator name like "sin". The `-1` index
+// is MathQuill's L constant (left sibling); the chain ends with a falsy 0.
+function wordLeftOfCaret() {
+  const cursor = mf.__controller.cursor;
+  let word = '';
+  for (let node = cursor[-1]; node && node.letter && node.ctrlSeq === node.letter; node = node[-1]) {
+    word = node.letter + word;
+  }
+  return word;
+}
 
 // ---------------------------------------------------------------------------
 // Keyboard shortcuts + shorthand detection (capture phase).
 //   Ctrl+Enter → Copy LaTeX
 //   Esc        → Clear field
-//   Space      → Substitute shorthand if buffer matches, otherwise pass through
+//   Space      → Substitute shorthand if the word left of the caret matches
 // ---------------------------------------------------------------------------
 
 document.addEventListener('keydown', (e) => {
@@ -250,23 +265,18 @@ document.addEventListener('keydown', (e) => {
     return;
   }
 
-  // Track letters typed into the field to detect shorthands.
-  if (!e.ctrlKey && !e.metaKey && !e.altKey) {
-    if (e.key.length === 1 && /[a-zA-Z]/.test(e.key)) {
-      letterBuffer += e.key;
-    } else if (e.key === ' ') {
-      const cmd = SHORTHANDS[letterBuffer];
-      if (cmd) {
-        e.preventDefault();
-        e.stopPropagation();
-        for (let i = 0; i < letterBuffer.length; i++) mf.keystroke('Backspace');
-        mf.cmd(cmd);
-        updateSource();
-      }
-      letterBuffer = '';
-    } else {
-      // Any non-letter, non-space key (^, _, +, Backspace, Tab…) resets the buffer.
-      letterBuffer = e.key === 'Backspace' ? letterBuffer.slice(0, -1) : '';
+  // Shorthand substitution on Space (see SHORTHANDS above). Only when the
+  // math field itself has focus — a Space while a button is focused is the
+  // button's to handle, not ours.
+  if (e.key === ' ' && !e.ctrlKey && !e.metaKey && !e.altKey && mqEl.contains(document.activeElement)) {
+    const word = wordLeftOfCaret();
+    const cmd = SHORTHANDS[word];
+    if (cmd) {
+      e.preventDefault();
+      e.stopPropagation();
+      for (let i = 0; i < word.length; i++) mf.keystroke('Backspace');
+      mf.cmd(cmd);
+      updateSource();
     }
   }
 }, true); // capture phase — fires before MathQuill's internal handlers
