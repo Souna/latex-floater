@@ -13,7 +13,7 @@ A small always-on-top desktop window for writing LaTeX fast. Type directly into 
   - **Copy LaTeX** — for Overleaf, Obsidian, Notion (`$$...$$`), Jupyter, GitHub, Markdown, Discord
   - **PNG** — for Google Docs, email, Slack, PowerPoint, or anywhere else without math rendering
 - Light/dark theme toggle, an opacity slider, and font-size controls in the titlebar
-- A grapher: the chevron on the bar under the field expands a Desmos-style plot of the current expression. It handles `y = f(x)`, `x = g(y)`, bare expressions in `x`, and implicit equations like `x^2+y^2=4`. Drag to pan, scroll to zoom, double-click to reset. Axis intercepts, maxima and minima, leftmost/rightmost points and self-intersections are marked; hover a point (or the curve itself) for its coordinates
+- A grapher: the chevron on the bar under the field expands a Desmos-style plot of the current expression. It handles `y = f(x)`, `x = g(y)`, bare expressions in `x`, and implicit equations like `x^2+y^2=4`. Drag to pan, scroll to zoom, double-click to reset. Axis intercepts, maxima and minima, leftmost/rightmost points and self-intersections are marked; hover a point for its coordinates, or click anywhere on the curve to read it there and drag to slide along it
 - Global hotkey `Ctrl+Alt+L` (`Cmd+Alt+L` on macOS) summons and focuses the window from any application
 - Keyboard shortcuts: `Ctrl+Enter` copy LaTeX, `Esc` copy and clear, `Alt+Up`/`Alt+Down` browse history
 

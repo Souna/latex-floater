@@ -297,12 +297,15 @@
       ctx.strokeStyle = active ? fg : accent;
       ctx.stroke();
     }
-    if (hover && hover.kind === 'trace') {
-      const [px, py] = toPx(hover.x, hover.y);
+    if (trace) {
+      const [px, py] = toPx(trace.x, trace.y);
       ctx.beginPath();
-      ctx.arc(px, py, 4, 0, Math.PI * 2);
+      ctx.arc(px, py, 4.5, 0, Math.PI * 2);
       ctx.fillStyle = accent;
       ctx.fill();
+      ctx.lineWidth = 1.5;
+      ctx.strokeStyle = fg;
+      ctx.stroke();
     }
   }
 
@@ -347,7 +350,7 @@
       for (const t of analyze((y) => F(0, y), y0, y1, x1 - x0).zeros) push(0, t, 'y-intercept');
     }
     points = found.slice(0, MAX_POINTS).map(({ x, y, kind }) => ({ x, y, kind }));
-    if (hover && hover.kind !== 'trace') hover = points.find((p) => p.x === hover.x && p.y === hover.y) || null;
+    if (hover) hover = points.find((p) => p.x === hover.x && p.y === hover.y) || null;
   }
 
   // One-dimensional analysis of f over [a, b]: zeros and extrema.
@@ -561,80 +564,151 @@
   }
 
   // ------------------------------------------------------- interaction
+  //
+  // Hovering only reveals points of interest. The curve itself is read by
+  // clicking on it, Desmos-style: a click within TRACE_RADIUS of the curve
+  // places a trace point there and shows its coordinates; holding the
+  // button and dragging slides the point along the curve; the point stays
+  // until the next click elsewhere or a new expression. A press anywhere
+  // else starts a pan.
 
-  let dragging = null;
+  let dragging = null;   // { px, py, cx, cy } while panning
+  let tracing = false;   // button held after a click on the curve
+  let trace = null;      // { x, y } the placed trace point, if any
 
-  canvas.addEventListener('mousedown', (e) => {
-    if (e.button !== 0) return;
-    dragging = { px: e.clientX, py: e.clientY, cx: view.cx, cy: view.cy };
-    wrap.classList.add('is-dragging');
-    e.preventDefault();
-  });
-  window.addEventListener('mousemove', (e) => {
-    if (!dragging) return;
-    view.cx = dragging.cx - (e.clientX - dragging.px) / view.scale;
-    view.cy = dragging.cy + (e.clientY - dragging.py) / view.scale;
-    schedule();
-  });
-  window.addEventListener('mouseup', () => { dragging = null; wrap.classList.remove('is-dragging'); });
-
-  // Zoom about the cursor, so the point under the mouse stays put. Stops
-  // propagation so app.js's Ctrl+wheel font-size handler doesn't also fire.
-  canvas.addEventListener('wheel', (e) => {
-    e.preventDefault();
-    e.stopPropagation();
+  const localPos = (e) => {
     const rect = canvas.getBoundingClientRect();
-    const px = e.clientX - rect.left, py = e.clientY - rect.top;
-    const [mx, my] = fromPx(px, py);
-    const factor = Math.pow(1.0015, -e.deltaY);
-    view.scale = Math.min(MAX_SCALE, Math.max(MIN_SCALE, view.scale * factor));
-    const [nx, ny] = fromPx(px, py);
-    view.cx += mx - nx;
-    view.cy += my - ny;
-    schedule();
-  }, { passive: false });
+    return [e.clientX - rect.left, e.clientY - rect.top];
+  };
 
-  canvas.addEventListener('dblclick', () => resetView());
-
-  canvas.addEventListener('mousemove', (e) => {
-    if (dragging || !curve) return;
-    const rect = canvas.getBoundingClientRect();
-    const px = e.clientX - rect.left, py = e.clientY - rect.top;
+  function poiNear(px, py) {
     let best = null, bestD = HOVER_RADIUS;
     for (const p of points) {
       const [qx, qy] = toPx(p.x, p.y);
       const d = Math.hypot(qx - px, qy - py);
       if (d < bestD) { best = p; bestD = d; }
     }
-    if (!best) {
-      // Trace along the curve itself.
-      if (curve.kind === 'y') {
-        const x = fromPx(px, 0)[0], y = curve.f(x);
-        if (Number.isFinite(y) && Math.abs(toPx(0, y)[1] - py) < TRACE_RADIUS) best = { x, y, kind: 'trace' };
-      } else if (curve.kind === 'x') {
-        const y = fromPx(0, py)[1], x = curve.f(y);
-        if (Number.isFinite(x) && Math.abs(toPx(x, 0)[0] - px) < TRACE_RADIUS) best = { x, y, kind: 'trace' };
-      }
-    }
-    setHover(best, px, py);
-  });
-  canvas.addEventListener('mouseleave', () => setHover(null));
+    return best;
+  }
 
-  function setHover(p, px, py) {
-    const changed = (p === null) !== (hover === null) || (p && hover && (p.x !== hover.x || p.y !== hover.y));
-    hover = p;
-    if (!p) { tip.hidden = true; if (changed) schedule(); return; }
+  // The point on the curve for a mouse position: for y = f(x) the point at
+  // that x, for x = g(y) the point at that y, for an implicit curve the
+  // nearest point on any marching-squares segment. With a radius, null is
+  // returned when the curve is further away than that (used to decide
+  // whether a press is a click on the curve); without one, the nearest
+  // point is always returned (used while dragging the trace point).
+  function curvePointFor(px, py, radius) {
+    if (!curve) return null;
+    if (curve.kind === 'y') {
+      const x = fromPx(px, 0)[0], y = curve.f(x);
+      if (!Number.isFinite(y)) return null;
+      if (radius !== undefined && Math.abs(toPx(0, y)[1] - py) > radius) return null;
+      return { x, y };
+    }
+    if (curve.kind === 'x') {
+      const y = fromPx(0, py)[1], x = curve.f(y);
+      if (!Number.isFinite(x)) return null;
+      if (radius !== undefined && Math.abs(toPx(x, 0)[0] - px) > radius) return null;
+      return { x, y };
+    }
+    if (!implicit) return null;
+    let best = null, bestD = radius === undefined ? Infinity : radius;
+    for (const [ax, ay, bx, by] of implicit.segs) {
+      const dx = bx - ax, dy = by - ay;
+      const len2 = dx * dx + dy * dy;
+      const t = len2 === 0 ? 0 : Math.max(0, Math.min(1, ((px - ax) * dx + (py - ay) * dy) / len2));
+      const qx = ax + t * dx, qy = ay + t * dy;
+      const d = Math.hypot(qx - px, qy - py);
+      if (d < bestD) { bestD = d; best = [qx, qy]; }
+    }
+    if (!best) return null;
+    const [x, y] = fromPx(best[0], best[1]);
+    return { x, y };
+  }
+
+  canvas.addEventListener('mousedown', (e) => {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    const [px, py] = localPos(e);
+    if (poiNear(px, py)) return;                       // a point of interest: hover already shows it
+    const cp = curvePointFor(px, py, TRACE_RADIUS);
+    if (cp) {
+      tracing = true;
+      trace = cp;
+      updateTip();
+      schedule();
+      return;
+    }
+    if (trace) { trace = null; updateTip(); schedule(); }
+    dragging = { px: e.clientX, py: e.clientY, cx: view.cx, cy: view.cy };
+    wrap.classList.add('is-dragging');
+  });
+
+  window.addEventListener('mousemove', (e) => {
+    if (tracing) {
+      const [px, py] = localPos(e);
+      const cp = curvePointFor(px, py);
+      if (cp) { trace = cp; updateTip(); schedule(); }
+      return;
+    }
+    if (!dragging) return;
+    view.cx = dragging.cx - (e.clientX - dragging.px) / view.scale;
+    view.cy = dragging.cy + (e.clientY - dragging.py) / view.scale;
+    schedule();
+  });
+
+  window.addEventListener('mouseup', () => {
+    tracing = false;
+    dragging = null;
+    wrap.classList.remove('is-dragging');
+  });
+
+  // Zoom about the cursor, so the point under the mouse stays put. Stops
+  // propagation so app.js's Ctrl+wheel font-size handler doesn't also fire.
+  canvas.addEventListener('wheel', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const [px, py] = localPos(e);
+    const [mx, my] = fromPx(px, py);
+    const factor = Math.pow(1.0015, -e.deltaY);
+    view.scale = Math.min(MAX_SCALE, Math.max(MIN_SCALE, view.scale * factor));
+    const [nx, ny] = fromPx(px, py);
+    view.cx += mx - nx;
+    view.cy += my - ny;
+    updateTip();
+    schedule();
+  }, { passive: false });
+
+  canvas.addEventListener('dblclick', () => resetView());
+
+  canvas.addEventListener('mousemove', (e) => {
+    if (dragging || tracing || !curve) return;
+    const [px, py] = localPos(e);
+    const p = poiNear(px, py);
+    if (p !== hover) { hover = p; updateTip(); schedule(); }
+  });
+  canvas.addEventListener('mouseleave', () => {
+    if (hover) { hover = null; updateTip(); schedule(); }
+  });
+
+  // The tooltip shows the hovered point of interest if there is one, else
+  // the trace point, anchored beside the point itself rather than the mouse.
+  function updateTip() {
+    const p = hover || trace;
+    if (!p) { tip.hidden = true; return; }
+    const [px, py] = toPx(p.x, p.y);
     tip.hidden = false;
-    tip.textContent = (p.kind === 'trace' ? '' : p.kind + '  ') + `(${fmt(p.x)}, ${fmt(p.y)})`;
+    tip.textContent = (p.kind ? p.kind + '  ' : '') + `(${fmt(p.x)}, ${fmt(p.y)})`;
     const flipX = px > width - 150;
     tip.style.left = (flipX ? px - 12 : px + 12) + 'px';
     tip.style.top = (py - 10) + 'px';
     tip.style.transform = flipX ? 'translateX(-100%)' : '';
-    if (changed || p.kind === 'trace') schedule();
   }
+
 
   function resetView() {
     view.cx = 0; view.cy = 0; view.scale = DEFAULT_SCALE;
+    updateTip();
     schedule();
   }
 
@@ -652,13 +726,14 @@
   function applyLatex() {
     const latex = pendingLatex;
     if (!latex || !latex.trim()) {
-      curve = null; errorText = ''; points = []; hover = null;
+      curve = null; errorText = ''; points = []; hover = null; trace = null;
     } else {
       try {
         curve = window.LatexMath.compileEquation(latex);
         errorText = '';
+        trace = null;
       } catch (err) {
-        curve = null; points = []; hover = null;
+        curve = null; points = []; hover = null; trace = null;
         errorText = err.message;
       }
     }
