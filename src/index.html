@@ -69,10 +69,21 @@
        editor that behaves exactly like Symbolab's input.
        ================================================================= -->
   <section class="editor">
-    <span id="mf" class="editor__field"></span>
-    <button id="btn-clear" class="editor__clear" title="Clear (Esc)">
-      <svg viewBox="0 0 16 16" width="12" height="12" fill="currentColor" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
-    </button>
+    <!-- Committed expressions stack up here, newest nearest the field and
+         older ones dimmer, and the whole stack scrolls once it outgrows the
+         space. app.js fills #history-list; the wrapper is the scroll box. -->
+    <div class="editor__history" id="history">
+      <div class="editor__history-list" id="history-list"></div>
+    </div>
+    <div class="editor__row">
+      <span id="mf" class="editor__field"></span>
+      <button id="btn-clear" class="editor__clear" title="Clear (Esc)">
+        <svg viewBox="0 0 16 16" width="12" height="12" fill="currentColor" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+      </button>
+    </div>
+    <!-- Empty twin of the history box, so the row stays at the vertical
+         centre no matter how the window is sized. -->
+    <div class="editor__below"></div>
   </section>
 
   <!-- =================================================================

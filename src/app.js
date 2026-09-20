@@ -41,28 +41,38 @@ function saveToHistory(latex) {
   if (history[0] === latex) return;   // don't duplicate consecutive entries
   history.unshift(latex);
   localStorage.setItem('history', JSON.stringify(history.slice(0, HISTORY_MAX)));
+  renderHistory();
 }
 
 let historyIndex = -1;   // -1 = current unsaved draft
 let historyDraft = '';   // saved draft when user starts navigating
 let navigating   = false; // prevents edit handler from resetting historyIndex mid-navigate
 
+// Loads history entry `index` into the field (-1 restores the draft the user
+// was typing before they started browsing). Shared by Alt+Up/Down and by
+// clicking an entry in the visible stack.
+function showHistoryEntry(index) {
+  const history = loadHistory();
+  if (historyIndex === -1 && index !== -1) historyDraft = mf.latex();
+  historyIndex = index;
+
+  navigating = true;
+  mf.latex(index === -1 ? historyDraft : history[index]);
+  navigating = false;
+  updateSource();
+  markActiveHistory();
+  mf.focus();
+  mf.moveToRightEnd();
+}
+
 function navigateHistory(direction) {
   const history = loadHistory();
   if (history.length === 0) return;
-
   if (direction === 'up') {
-    if (historyIndex === -1) historyDraft = mf.latex();
-    if (historyIndex < history.length - 1) historyIndex++;
-  } else {
-    if (historyIndex === -1) return;
-    historyIndex--;
+    if (historyIndex < history.length - 1) showHistoryEntry(historyIndex + 1);
+  } else if (historyIndex !== -1) {
+    showHistoryEntry(historyIndex - 1);
   }
-
-  navigating = true;
-  mf.latex(historyIndex === -1 ? historyDraft : history[historyIndex]);
-  navigating = false;
-  updateSource();
 }
 
 const mf = MQ.MathField(mqEl, {
@@ -77,10 +87,60 @@ const mf = MQ.MathField(mqEl, {
   autoOperatorNames: 'sin cos tan cot sec csc sinh cosh tanh arcsin arccos arctan log ln det lim',
   handlers: {
     edit: () => {
-      if (!navigating) historyIndex = -1;
+      if (!navigating && historyIndex !== -1) { historyIndex = -1; markActiveHistory(); }
       updateSource();
     }
   }
+});
+
+// ---------------------------------------------------------------------------
+// The visible history stack.
+//
+// Every committed expression (copied or cleared) is rendered as static math
+// above the field, newest nearest the field, each older one a little dimmer,
+// so the last few things you wrote stay in view without taking focus away
+// from the input. Clicking one loads it into the field; Alt+Up/Down walks the
+// same list and highlights where it is. The stack is rebuilt in full whenever
+// history changes — at most 20 small static renders, cheap enough that
+// incremental DOM surgery isn't worth its complexity.
+// ---------------------------------------------------------------------------
+
+const historyBox  = document.getElementById('history');
+const historyList = document.getElementById('history-list');
+
+function historyOpacity(index) {
+  return Math.max(0.2, 0.65 - index * 0.09);
+}
+
+function renderHistory() {
+  const history = loadHistory();
+  historyList.textContent = '';
+  // Oldest first in the DOM so the newest ends up directly above the field.
+  for (let i = history.length - 1; i >= 0; i--) {
+    const item = document.createElement('button');
+    item.type = 'button';
+    item.className = 'history__item';
+    item.dataset.index = i;
+    item.title = 'Load into the editor';
+    item.style.opacity = historyOpacity(i);
+    if (i === historyIndex) item.classList.add('is-active');
+    const math = document.createElement('span');
+    item.appendChild(math);
+    MQ.StaticMath(math).latex(history[i]);
+    historyList.appendChild(item);
+  }
+  historyBox.scrollTop = historyBox.scrollHeight;
+}
+
+function markActiveHistory() {
+  for (const item of historyList.children) {
+    item.classList.toggle('is-active', Number(item.dataset.index) === historyIndex);
+  }
+}
+
+historyList.addEventListener('click', (e) => {
+  const item = e.target.closest('.history__item');
+  if (item) showHistoryEntry(Number(item.dataset.index));
 });
 
 // ---------------------------------------------------------------------------
@@ -180,7 +240,7 @@ document.getElementById('btn-clear').addEventListener('click', clearField);
 // after which typing went nowhere until the user found the strip. Treat a
 // click anywhere in the editor box as a click into the field.
 document.querySelector('.editor').addEventListener('mousedown', (e) => {
-  if (mqEl.contains(e.target) || e.target.closest('#btn-clear')) return;
+  if (mqEl.contains(e.target) || e.target.closest('#btn-clear, .history__item')) return;
   e.preventDefault();
   mf.focus();
   mf.moveToRightEnd();
@@ -359,6 +419,9 @@ let fontSize = parseInt(localStorage.getItem('fontSize') || FONT_DEFAULT, 10);
 
 function applyFontSize() {
   mqEl.style.fontSize = fontSize + 'px';
+  // History entries follow the field's size but stay a step smaller, so the
+  // live input is always the largest thing in the stack.
+  historyList.style.fontSize = Math.round(fontSize * 0.85) + 'px';
   localStorage.setItem('fontSize', fontSize);
 }
 
@@ -380,6 +443,7 @@ document.getElementById('btn-font-dec').addEventListener('click', decreaseFontSi
 // ---------------------------------------------------------------------------
 
 applyFontSize();
+renderHistory();
 window.floater.setOpacity(parseFloat(localStorage.getItem('opacity') || '1'));
 updateSource();
 setTimeout(() => mf.focus(), 50);
