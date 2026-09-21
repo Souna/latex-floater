@@ -42,6 +42,8 @@ function saveToHistory(latex) {
   history.unshift(latex);
   localStorage.setItem('history', JSON.stringify(history.slice(0, HISTORY_MAX)));
   renderHistory();
+  // The battle pass counts exactly what the history does: a committed expression.
+  window.BattlePass.award(latex);
 }
 
 let historyIndex = -1;   // -1 = current unsaved draft
@@ -277,7 +279,7 @@ document.getElementById('btn-clear').addEventListener('click', clearField);
 // after which typing went nowhere until the user found the strip. Treat a
 // click anywhere in the editor box as a click into the field.
 document.querySelector('.editor').addEventListener('mousedown', (e) => {
-  if (mqEl.contains(e.target) || e.target.closest('#btn-clear, .history__item, .graph')) return;
+  if (mqEl.contains(e.target) || e.target.closest('#btn-clear, .history__item, .graph, .pass')) return;
   e.preventDefault();
   mf.focus();
   mf.moveToRightEnd();
@@ -453,15 +455,23 @@ async function ensureGraphRoom() {
   await window.floater.resizeBy(need);
 }
 
-// While the graph is expanded the window may not be shrunk below what the
-// layout needs (plot and history each at the plot's minimum, plus the
-// field row and chrome); otherwise the panel would overflow the editor
-// area and hide the bars below it. Collapsing restores the normal minimum.
-function applyGraphMinHeight(open) {
-  if (!open) return window.floater.setMinHeight(280);
-  const chrome = window.innerHeight - editorEl.clientHeight;
-  return window.floater.setMinHeight(Math.ceil(chrome + editorRow.offsetHeight + 24 + 2 * GRAPH_MIN));
+// The window may not be shrunk below what the open panels need. With the
+// graph expanded that is plot and history each at the plot's minimum, plus
+// the field row and everything outside the editor area ("chrome", which
+// includes the battle pass track when that is open); otherwise the panel
+// would overflow the editor area and hide the bars below it. With only the
+// battle pass open it is the normal minimum plus the track. Both panels
+// call this when they toggle.
+function updateMinHeight() {
+  const pass = window.BattlePass;
+  let min = 280 + (pass.isOpen() ? pass.trackHeight : 0);
+  if (graphOpen) {
+    const chrome = window.innerHeight - editorEl.clientHeight;
+    min = Math.max(min, chrome + editorRow.offsetHeight + 24 + 2 * GRAPH_MIN);
+  }
+  return window.floater.setMinHeight(Math.ceil(min));
 }
+window.updateMinHeight = updateMinHeight;
 
 async function setGraphOpen(open) {
   graphOpen = open;
@@ -470,11 +480,11 @@ async function setGraphOpen(open) {
 
   if (open) {
     await ensureGraphRoom();
-    await applyGraphMinHeight(true);
+    await updateMinHeight();
     window.Grapher.refresh();
     window.Grapher.setLatex(mf.latex() || '');
   } else {
-    await applyGraphMinHeight(false);
+    await updateMinHeight();
     if (graphGrown > 0) {
       const delta = graphGrown;
       graphGrown = 0;
@@ -488,26 +498,33 @@ async function setGraphOpen(open) {
 graphToggle.addEventListener('click', () => setGraphOpen(!graphOpen));
 
 // ---------------------------------------------------------------------------
-// Light / dark theme toggle.
+// Themes. The palettes and the mechanics of applying one live in themes.js;
+// the battle pass (battlepass.js) decides which are unlocked and owns the
+// paint-brush dropdown. Here: the sun/moon toggle, its icon, and the
+// grapher redraw a theme change needs.
 // ---------------------------------------------------------------------------
 
 const iconSun  = document.getElementById('icon-sun');
 const iconMoon = document.getElementById('icon-moon');
 
-function applyTheme(theme) {
-  document.documentElement.setAttribute('data-theme', theme);
-  const isLight = theme === 'light';
+document.addEventListener('themechange', ({ detail }) => {
+  const isLight = detail.mode === 'light';
   iconSun.style.display  = isLight ? 'none'  : '';
   iconMoon.style.display = isLight ? ''      : 'none';
-  localStorage.setItem('theme', theme);
   window.Grapher.redraw();
+});
+
+{
+  // Older builds stored 'dark' / 'light' as the theme itself; those are now
+  // the two modes of Default.
+  let saved = localStorage.getItem('theme') || 'default';
+  let mode = localStorage.getItem('themeMode') || 'dark';
+  if (saved === 'dark' || saved === 'light') { mode = saved; saved = 'default'; }
+  window.Themes.apply(window.BattlePass.isUnlocked(saved) ? saved : 'default', mode);
 }
 
-applyTheme(localStorage.getItem('theme') || 'dark');
-
 document.getElementById('btn-theme').addEventListener('click', () => {
-  const next = document.documentElement.getAttribute('data-theme') === 'light' ? 'dark' : 'light';
-  applyTheme(next);
+  window.Themes.toggleMode();
   mf.focus();
 });
 
@@ -578,10 +595,12 @@ updateSource();
 // remembers what to give back on collapse either way.
 applyGraphLayout(graphOpen);
 if (graphOpen) {
-  ensureGraphRoom().then(() => applyGraphMinHeight(true)).then(() => {
+  ensureGraphRoom().then(updateMinHeight).then(() => {
     window.Grapher.refresh();
     window.Grapher.setLatex(mf.latex() || '');
   });
+} else {
+  updateMinHeight();
 }
 setTimeout(() => mf.focus(), 50);
 

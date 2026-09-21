@@ -68,7 +68,7 @@
   --radius-sm:   4px;
 }
 
-[data-theme="light"] {
+html[data-theme="light"] {
   --bg:          #f4f2ed;
   --bg-raise:    #ffffff;
   --bg-hover:    #e8e5de;
@@ -166,6 +166,58 @@ body {
 .titlebar__btn--close:hover  { background: var(--danger-bg); color: var(--danger); }
 .titlebar__btn--pin.is-active { color: var(--accent); }
 .titlebar__btn--font { width: auto; padding: 0 5px; font-size: 10px; font-family: inherit; }
+
+.titlebar__coins {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 6px 0 4px;
+  height: 24px;
+  font-family: 'IBM Plex Mono', ui-monospace, monospace;
+  font-size: 10.5px;
+  color: #d4a45c;   /* a coin is gold in every theme */
+  cursor: default;
+}
+
+/* Dropdown under the paint-brush button. */
+.menu {
+  position: fixed;
+  z-index: 20;
+  min-width: 170px;
+  padding: 4px;
+  background: var(--bg-raise);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+}
+.menu[hidden] { display: none; }
+.menu__item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 5px 8px;
+  border: none;
+  background: transparent;
+  color: var(--fg);
+  font: inherit;
+  font-size: 12px;
+  text-align: left;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+.menu__item:hover:not(:disabled) { background: var(--bg-hover); }
+.menu__item:disabled { color: var(--fg-faint); cursor: default; }
+.menu__item.is-current { color: var(--accent); }
+.menu__name { flex: 1; }
+.menu__tag {
+  font-family: 'IBM Plex Mono', ui-monospace, monospace;
+  font-size: 9.5px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--fg-faint);
+}
+.menu__tag--lock::before { content: "🔒 "; font-size: 9px; }
 
 .titlebar__opacity {
   width: 56px;
@@ -292,7 +344,8 @@ body {
 .graph__canvas-wrap[hidden] { display: none; }
 .graph__btn[hidden] { display: none; }
 .graph__btn--toggle svg { transition: transform 0.15s; }
-.graph.is-collapsed .graph__btn--toggle svg { transform: rotate(180deg); }
+.graph.is-collapsed .graph__btn--toggle svg,
+.pass.is-collapsed .graph__btn--toggle svg { transform: rotate(180deg); }
 
 .graph__bar {
   display: flex;
@@ -432,6 +485,272 @@ body {
   transition: background-color 0.12s, color 0.12s;
 }
 .editor__clear:hover { background: var(--bg-hover); color: var(--danger); }
+
+/* =========================================================================
+   Battle pass panel
+   ========================================================================= */
+
+.pass {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  border-top: 1px solid var(--border);
+  background: var(--bg-bar);
+  overflow: hidden;
+}
+.pass.is-levelup { animation: pass-levelup 0.9s ease-out; }
+@keyframes pass-levelup {
+  0%   { box-shadow: 0 0 0 0 var(--accent-soft), inset 0 0 0 1px var(--accent); }
+  100% { box-shadow: 0 0 0 12px transparent, inset 0 0 0 1px transparent; }
+}
+
+.pass__bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 8px 4px 12px;
+  font-size: 11px;
+  color: var(--fg-dim);
+  flex-shrink: 0;
+}
+.pass:not(.is-collapsed) .pass__bar { border-bottom: 1px solid var(--border); }
+.pass__title {
+  font-size: 9px;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  color: var(--accent);
+  font-weight: 600;
+}
+.pass__level { font-weight: 500; color: var(--fg); }
+.pass__xpbar {
+  flex: 1;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--border);
+  overflow: hidden;
+}
+.pass__xpfill {
+  display: block;
+  height: 100%;
+  width: 0;
+  background: var(--accent);
+  transition: width 0.3s ease-out;
+}
+.pass__xp { font-family: 'IBM Plex Mono', ui-monospace, monospace; font-size: 10.5px; }
+.pass__gain {
+  font-family: 'IBM Plex Mono', ui-monospace, monospace;
+  font-size: 10.5px;
+  font-weight: 600;
+  color: var(--success);
+}
+.pass__gain[hidden] { display: none; }
+.pass__gain.is-pop { animation: pass-pop 1.6s ease-out forwards; }
+@keyframes pass-pop {
+  0%   { opacity: 0; transform: translateY(4px); }
+  15%  { opacity: 1; transform: translateY(0); }
+  80%  { opacity: 1; }
+  100% { opacity: 0; }
+}
+
+/* The track: fifty nodes on a line, scrolled horizontally. */
+/* No scrollbar: the wheel scrolls it sideways and dragging pans it (battlepass.js). */
+.pass__track-wrap {
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+  height: 156px;
+  background: var(--bg-sink);
+  cursor: grab;
+  user-select: none;
+}
+.pass__track-wrap::-webkit-scrollbar { display: none; }
+.pass__track-wrap.is-panning { cursor: grabbing; }
+.pass__node.is-theme.is-done { cursor: pointer; }
+.pass__track-wrap[hidden] { display: none; }
+.pass__track {
+  position: relative;
+  display: flex;
+  align-items: center;
+  height: 100%;
+  padding: 0 28px;
+  width: max-content;
+}
+/* The line the dots sit on, and the filled part up to the current level. */
+.pass__track::before {
+  content: "";
+  position: absolute;
+  left: 60px; right: 60px;
+  top: 50%;
+  height: 2px;
+  background: var(--border-strong);
+  transform: translateY(-50%);
+}
+.pass__fill {
+  position: absolute;
+  left: 60px;
+  top: 50%;
+  height: 2px;
+  max-width: calc(100% - 120px);
+  background: var(--accent);
+  transform: translateY(-50%);
+  transition: width 0.4s ease-out;
+}
+.pass__node {
+  position: relative;
+  z-index: 1;
+  width: 64px;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border: none;
+  background: transparent;
+  color: var(--fg-faint);
+  font: inherit;
+  cursor: default;
+}
+.pass__reward { height: 22px; display: flex; align-items: center; }
+.pass__dot {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  border: 2px solid var(--border-strong);
+  background: var(--bg-sink);
+  color: var(--fg-faint);
+  font-family: 'IBM Plex Mono', ui-monospace, monospace;
+  font-size: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background-color 0.2s, border-color 0.2s;
+}
+.pass__label { font-size: 10px; height: 14px; white-space: nowrap; }
+.pass__node.is-done .pass__dot { background: var(--accent); border-color: var(--accent); color: var(--bg); }
+.pass__node.is-done { color: var(--fg-dim); }
+.pass__node.is-current .pass__dot { box-shadow: 0 0 0 4px var(--accent-soft); }
+.pass__node.is-current .pass__label { color: var(--fg); }
+.pass__node.is-theme .pass__label { font-weight: 500; }
+.pass__node.is-theme.is-done .pass__label { color: var(--fg); }
+.pass__node:not(.is-done) .pass__reward { opacity: 0.45; }
+
+/* Theme swatches: a dot of the theme's accent on its background. */
+.pass__swatch {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 50% 50%, var(--swatch) 0 42%, var(--swatch-bg) 46%);
+  border: 1px solid var(--border-strong);
+  flex-shrink: 0;
+}
+.pass__node.is-unique .pass__swatch { width: 20px; height: 20px; box-shadow: 0 0 0 2px var(--swatch); }
+.pass__node.is-gold .pass__swatch {
+  width: 22px; height: 22px;
+  box-shadow: 0 0 0 2px #f5c542, 0 0 12px rgba(245, 197, 66, 0.7);
+}
+.pass__node.is-unique .pass__dot { width: 30px; height: 30px; }
+.pass__node.is-gold .pass__dot { width: 32px; height: 32px; border-color: #f5c542; }
+
+/* =========================================================================
+   Theme flourishes — a little extra for the unusual rewards. The palettes
+   themselves are in themes.js; these only add what a variable can't.
+   ========================================================================= */
+
+html[data-theme="nebula"] body {
+  background-image: radial-gradient(ellipse at 20% 0%, rgba(217, 123, 255, 0.18), transparent 55%),
+                    radial-gradient(ellipse at 90% 100%, rgba(80, 140, 255, 0.16), transparent 50%),
+                    linear-gradient(180deg, var(--bg) 0%, var(--bg-sink) 100%);
+}
+html[data-theme="synthwave"] .titlebar__name { text-shadow: 0 0 8px var(--accent), 0 0 18px rgba(255, 79, 216, 0.5); color: var(--fg); }
+html[data-theme="synthwave"] .editor__field.mq-editable-field.mq-focused { box-shadow: 0 0 0 2px var(--accent-soft), 0 0 18px rgba(255, 79, 216, 0.45) !important; }
+html[data-theme="blueprint"] .editor {
+  background-image: linear-gradient(rgba(255, 255, 255, 0.07) 1px, transparent 1px),
+                    linear-gradient(90deg, rgba(255, 255, 255, 0.07) 1px, transparent 1px);
+  background-size: 16px 16px;
+}
+html[data-theme="terminal"] body, html[data-theme="terminal"] .btn, html[data-theme="terminal"] .titlebar__btn { font-family: 'IBM Plex Mono', ui-monospace, monospace; }
+html[data-theme="terminal"] .editor__field .mq-cursor { box-shadow: 0 0 6px var(--accent); }
+html[data-theme="gold"] .titlebar__name {
+  background: linear-gradient(90deg, #f5c542, #fff3c4, #f5c542, #c9962b);
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: gold-shimmer 3s linear infinite;
+}
+@keyframes gold-shimmer { to { background-position: 200% 0; } }
+html[data-theme="gold"] .titlebar__dot { box-shadow: 0 0 10px #f5c542; }
+/* Gold is polished metal, not a gold-tinted palette. Every bar gets a
+   brushed-metal gradient with a specular streak that sweeps across it every
+   few seconds. Buttons are bevelled: a bright top edge, a dark bottom edge.
+   The field wears a gold ring with a glow; the level-50 node breathes. */
+html[data-theme="gold"] .titlebar,
+html[data-theme="gold"] .actions,
+html[data-theme="gold"] .pass__bar,
+html[data-theme="gold"] .graph__bar,
+html[data-theme="gold"] .source {
+  position: relative;
+  background:
+    linear-gradient(180deg, rgba(255, 226, 140, 0.10) 0%, rgba(0, 0, 0, 0) 45%, rgba(0, 0, 0, 0.28) 100%),
+    var(--bg-bar);
+  border-color: #8a6a1a;
+  overflow: hidden;
+}
+html[data-theme="gold"] .titlebar::after,
+html[data-theme="gold"] .actions::after,
+html[data-theme="gold"] .pass__bar::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(115deg, transparent 38%, rgba(255, 236, 170, 0.18) 47%, rgba(255, 255, 255, 0.42) 50%, rgba(255, 236, 170, 0.18) 53%, transparent 62%);
+  background-size: 260% 100%;
+  animation: gold-sweep 7s ease-in-out infinite;
+}
+html[data-theme="gold"] .actions::after { animation-delay: 2.3s; }
+html[data-theme="gold"] .pass__bar::after { animation-delay: 4.6s; }
+@keyframes gold-sweep {
+  0%, 60% { background-position: 130% 0; }
+  100%    { background-position: -30% 0; }
+}
+html[data-theme="gold"] .titlebar__name { filter: drop-shadow(0 0 6px rgba(245, 197, 66, 0.55)); }
+html[data-theme="gold"] .source__label,
+html[data-theme="gold"] .pass__title {
+  background: linear-gradient(90deg, #c9962b, #fff1b8, #f5c542);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+html[data-theme="gold"] .btn--primary {
+  background: linear-gradient(180deg, #ffe58a 0%, #f5c542 42%, #c9962b 56%, #e2b53a 100%);
+  border-color: #7a5a12;
+  color: #2a1e05;
+  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.45);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.65), inset 0 -1px 0 rgba(0, 0, 0, 0.35), 0 0 14px rgba(245, 197, 66, 0.35);
+}
+html[data-theme="gold"] .btn--primary:hover {
+  background: linear-gradient(180deg, #fff1b8 0%, #ffd76a 42%, #d9a532 56%, #f0c24a 100%);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.7), inset 0 -1px 0 rgba(0, 0, 0, 0.35), 0 0 22px rgba(245, 197, 66, 0.55);
+}
+html[data-theme="gold"] .btn {
+  border-color: #8a6a1a;
+  box-shadow: inset 0 1px 0 rgba(255, 236, 170, 0.15), inset 0 -1px 0 rgba(0, 0, 0, 0.3);
+}
+html[data-theme="gold"] .editor__field.mq-editable-field {
+  border-color: #c9962b !important;
+  box-shadow: 0 0 0 1px rgba(255, 241, 184, 0.25), inset 0 1px 0 rgba(255, 236, 170, 0.08), 0 0 16px rgba(245, 197, 66, 0.18) !important;
+}
+html[data-theme="gold"] .editor__field.mq-editable-field.mq-focused {
+  border-color: #f5c542 !important;
+  box-shadow: 0 0 0 2px rgba(255, 241, 184, 0.35), inset 0 1px 0 rgba(255, 236, 170, 0.1), 0 0 26px rgba(245, 197, 66, 0.4) !important;
+}
+html[data-theme="gold"] .pass__xpfill { background: linear-gradient(90deg, #c9962b, #fff1b8 60%, #f5c542); box-shadow: 0 0 8px rgba(245, 197, 66, 0.6); }
+html[data-theme="gold"] .pass__node.is-gold .pass__dot { animation: gold-breathe 2.4s ease-in-out infinite; }
+@keyframes gold-breathe {
+  0%, 100% { box-shadow: 0 0 0 4px var(--accent-soft), 0 0 10px rgba(245, 197, 66, 0.5); }
+  50%      { box-shadow: 0 0 0 6px var(--accent-soft), 0 0 24px rgba(245, 197, 66, 0.9); }
+}
 
 /* =========================================================================
    LaTeX source readout
