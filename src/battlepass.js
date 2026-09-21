@@ -140,9 +140,35 @@
     return '<svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><circle cx="8" cy="8" r="6.5" fill="#d4a45c" stroke="#e0b472"/><text x="8" y="11.2" text-anchor="middle" font-size="8.5" font-family="IBM Plex Mono, monospace" font-weight="600" fill="#1a1308">L</text></svg>';
   }
 
+  // The track has no scrollbar: the wheel scrolls it sideways, and dragging
+  // pans it. A drag that moved more than a few pixels swallows the click
+  // that ends it, so panning across a theme node doesn't apply the theme.
+  let pan = null, panned = false;
+  trackWrap.addEventListener('wheel', (e) => {
+    if (e.ctrlKey || e.metaKey) return;   // leave font-size zoom to app.js
+    e.preventDefault();
+    e.stopPropagation();
+    trackWrap.scrollLeft += (e.deltaX || e.deltaY);
+  }, { passive: false });
+  trackWrap.addEventListener('mousedown', (e) => {
+    if (e.button !== 0) return;
+    pan = { x: e.clientX, left: trackWrap.scrollLeft };
+    panned = false;
+    trackWrap.classList.add('is-panning');
+    e.preventDefault();
+  });
+  window.addEventListener('mousemove', (e) => {
+    if (!pan) return;
+    const dx = e.clientX - pan.x;
+    if (Math.abs(dx) > 4) panned = true;
+    trackWrap.scrollLeft = pan.left - dx;
+  });
+  window.addEventListener('mouseup', () => { pan = null; trackWrap.classList.remove('is-panning'); });
+
   // Clicking an unlocked theme on the track applies it; anything else just
   // shows its title.
   track.addEventListener('click', (e) => {
+    if (panned) { panned = false; return; }
     const node = e.target.closest('.pass__node');
     if (!node) return;
     const L = Number(node.dataset.level);

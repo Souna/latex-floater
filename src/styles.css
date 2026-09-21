@@ -553,13 +553,19 @@ body {
 }
 
 /* The track: fifty nodes on a line, scrolled horizontally. */
+/* No scrollbar: the wheel scrolls it sideways and dragging pans it (battlepass.js). */
 .pass__track-wrap {
   overflow-x: auto;
   overflow-y: hidden;
-  scrollbar-width: thin;
+  scrollbar-width: none;
   height: 156px;
   background: var(--bg-sink);
+  cursor: grab;
+  user-select: none;
 }
+.pass__track-wrap::-webkit-scrollbar { display: none; }
+.pass__track-wrap.is-panning { cursor: grabbing; }
+.pass__node.is-theme.is-done { cursor: pointer; }
 .pass__track-wrap[hidden] { display: none; }
 .pass__track {
   position: relative;
@@ -605,7 +611,6 @@ body {
   font: inherit;
   cursor: default;
 }
-.pass__node.is-theme.is-done { cursor: pointer; }
 .pass__reward { height: 22px; display: flex; align-items: center; }
 .pass__dot {
   width: 26px;
@@ -676,7 +681,79 @@ html[data-theme="gold"] .titlebar__name {
 }
 @keyframes gold-shimmer { to { background-position: 200% 0; } }
 html[data-theme="gold"] .titlebar__dot { box-shadow: 0 0 10px #f5c542; }
-html[data-theme="gold"] .editor__field.mq-editable-field { border-color: #c9962b !important; }
+/* Gold is polished metal, not a gold-tinted palette. Every bar gets a
+   brushed-metal gradient with a specular streak that sweeps across it every
+   few seconds, plus a soft highlight that follows the mouse horizontally
+   (--mx is set by themes.js) so the surface catches the light as you move
+   over it. Buttons are bevelled: a bright top edge, a dark bottom edge.
+   The field wears a gold ring with a glow; the level-50 node breathes. */
+html[data-theme="gold"] .titlebar,
+html[data-theme="gold"] .actions,
+html[data-theme="gold"] .pass__bar,
+html[data-theme="gold"] .graph__bar,
+html[data-theme="gold"] .source {
+  position: relative;
+  background:
+    radial-gradient(260px 90px at var(--mx, 50%) 0%, rgba(255, 244, 196, 0.22), transparent 70%),
+    linear-gradient(180deg, rgba(255, 226, 140, 0.10) 0%, rgba(0, 0, 0, 0) 45%, rgba(0, 0, 0, 0.28) 100%),
+    var(--bg-bar);
+  border-color: #8a6a1a;
+  overflow: hidden;
+}
+html[data-theme="gold"] .titlebar::after,
+html[data-theme="gold"] .actions::after,
+html[data-theme="gold"] .pass__bar::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(115deg, transparent 38%, rgba(255, 236, 170, 0.18) 47%, rgba(255, 255, 255, 0.42) 50%, rgba(255, 236, 170, 0.18) 53%, transparent 62%);
+  background-size: 260% 100%;
+  animation: gold-sweep 7s ease-in-out infinite;
+}
+html[data-theme="gold"] .actions::after { animation-delay: 2.3s; }
+html[data-theme="gold"] .pass__bar::after { animation-delay: 4.6s; }
+@keyframes gold-sweep {
+  0%, 60% { background-position: 130% 0; }
+  100%    { background-position: -30% 0; }
+}
+html[data-theme="gold"] .titlebar__name { filter: drop-shadow(0 0 6px rgba(245, 197, 66, 0.55)); }
+html[data-theme="gold"] .source__label,
+html[data-theme="gold"] .pass__title {
+  background: linear-gradient(90deg, #c9962b, #fff1b8, #f5c542);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+html[data-theme="gold"] .btn--primary {
+  background: linear-gradient(180deg, #ffe58a 0%, #f5c542 42%, #c9962b 56%, #e2b53a 100%);
+  border-color: #7a5a12;
+  color: #2a1e05;
+  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.45);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.65), inset 0 -1px 0 rgba(0, 0, 0, 0.35), 0 0 14px rgba(245, 197, 66, 0.35);
+}
+html[data-theme="gold"] .btn--primary:hover {
+  background: linear-gradient(180deg, #fff1b8 0%, #ffd76a 42%, #d9a532 56%, #f0c24a 100%);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.7), inset 0 -1px 0 rgba(0, 0, 0, 0.35), 0 0 22px rgba(245, 197, 66, 0.55);
+}
+html[data-theme="gold"] .btn {
+  border-color: #8a6a1a;
+  box-shadow: inset 0 1px 0 rgba(255, 236, 170, 0.15), inset 0 -1px 0 rgba(0, 0, 0, 0.3);
+}
+html[data-theme="gold"] .editor__field.mq-editable-field {
+  border-color: #c9962b !important;
+  box-shadow: 0 0 0 1px rgba(255, 241, 184, 0.25), inset 0 1px 0 rgba(255, 236, 170, 0.08), 0 0 16px rgba(245, 197, 66, 0.18) !important;
+}
+html[data-theme="gold"] .editor__field.mq-editable-field.mq-focused {
+  border-color: #f5c542 !important;
+  box-shadow: 0 0 0 2px rgba(255, 241, 184, 0.35), inset 0 1px 0 rgba(255, 236, 170, 0.1), 0 0 26px rgba(245, 197, 66, 0.4) !important;
+}
+html[data-theme="gold"] .pass__xpfill { background: linear-gradient(90deg, #c9962b, #fff1b8 60%, #f5c542); box-shadow: 0 0 8px rgba(245, 197, 66, 0.6); }
+html[data-theme="gold"] .pass__node.is-gold .pass__dot { animation: gold-breathe 2.4s ease-in-out infinite; }
+@keyframes gold-breathe {
+  0%, 100% { box-shadow: 0 0 0 4px var(--accent-soft), 0 0 10px rgba(245, 197, 66, 0.5); }
+  50%      { box-shadow: 0 0 0 6px var(--accent-soft), 0 0 24px rgba(245, 197, 66, 0.9); }
+}
 
 /* =========================================================================
    LaTeX source readout

@@ -189,5 +189,17 @@
     apply(currentId, currentMode === 'dark' ? 'light' : 'dark');
   }
 
+  // Gold's bars carry a highlight that follows the mouse horizontally
+  // (styles.css reads --mx), so the metal seems to catch the light. Only
+  // updated while Gold is on, and at most once per frame.
+  let lightFrame = 0;
+  document.addEventListener('mousemove', (e) => {
+    if (currentId !== 'gold' || lightFrame) return;
+    lightFrame = requestAnimationFrame(() => {
+      lightFrame = 0;
+      root.style.setProperty('--mx', e.clientX + 'px');
+    });
+  });
+
   window.Themes = { THEMES, VARS, current: () => currentId, mode: () => currentMode, apply, toggleMode, varsFor };
 })();
