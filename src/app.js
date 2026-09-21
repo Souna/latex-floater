@@ -508,19 +508,23 @@ const iconSun  = document.getElementById('icon-sun');
 const iconMoon = document.getElementById('icon-moon');
 
 document.addEventListener('themechange', ({ detail }) => {
-  const isLight = window.Themes.THEMES[detail.id].base === 'light';
+  const isLight = detail.mode === 'light';
   iconSun.style.display  = isLight ? 'none'  : '';
   iconMoon.style.display = isLight ? ''      : 'none';
   window.Grapher.redraw();
 });
 
 {
-  const saved = localStorage.getItem('theme') || 'dark';
-  window.Themes.apply(window.BattlePass.isUnlocked(saved) ? saved : 'dark');
+  // Older builds stored 'dark' / 'light' as the theme itself; those are now
+  // the two modes of Default.
+  let saved = localStorage.getItem('theme') || 'default';
+  let mode = localStorage.getItem('themeMode') || 'dark';
+  if (saved === 'dark' || saved === 'light') { mode = saved; saved = 'default'; }
+  window.Themes.apply(window.BattlePass.isUnlocked(saved) ? saved : 'default', mode);
 }
 
 document.getElementById('btn-theme').addEventListener('click', () => {
-  window.Themes.toggleBase();
+  window.Themes.toggleMode();
   mf.focus();
 });
 

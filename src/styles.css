@@ -175,7 +175,7 @@ body {
   height: 24px;
   font-family: 'IBM Plex Mono', ui-monospace, monospace;
   font-size: 10.5px;
-  color: var(--accent);
+  color: #d4a45c;   /* a coin is gold in every theme */
   cursor: default;
 }
 
@@ -344,7 +344,8 @@ body {
 .graph__canvas-wrap[hidden] { display: none; }
 .graph__btn[hidden] { display: none; }
 .graph__btn--toggle svg { transition: transform 0.15s; }
-.graph.is-collapsed .graph__btn--toggle svg { transform: rotate(180deg); }
+.graph.is-collapsed .graph__btn--toggle svg,
+.pass.is-collapsed .graph__btn--toggle svg { transform: rotate(180deg); }
 
 .graph__bar {
   display: flex;

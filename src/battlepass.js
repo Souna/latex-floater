@@ -120,7 +120,7 @@
         node.title = `Level ${L}: the ${theme.name} theme` + (theme.blurb ? ` — ${theme.blurb}` : '');
       } else if (reward) {
         icon = coinSvg();
-        label = `${reward.amount}`;
+        label = '';
         node.title = `Level ${L}: ${reward.amount} LaTeX coins`;
       } else {
         node.title = 'Level 1';
@@ -135,8 +135,9 @@
     track.appendChild(fill);
   }
 
+  // A LaTeX coin is gold whatever the theme; it's a coin.
   function coinSvg() {
-    return '<svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><circle cx="8" cy="8" r="6.5" fill="var(--accent)" stroke="var(--accent-hover)"/><text x="8" y="11.2" text-anchor="middle" font-size="8.5" font-family="IBM Plex Mono, monospace" font-weight="600" fill="var(--bg)">L</text></svg>';
+    return '<svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><circle cx="8" cy="8" r="6.5" fill="#d4a45c" stroke="#e0b472"/><text x="8" y="11.2" text-anchor="middle" font-size="8.5" font-family="IBM Plex Mono, monospace" font-weight="600" fill="#1a1308">L</text></svg>';
   }
 
   // Clicking an unlocked theme on the track applies it; anything else just
@@ -302,8 +303,11 @@
       const level = themeLevel(id);
       item.disabled = !unlocked;
       item.classList.toggle('is-current', id === current);
-      const swatch = theme.vars ? `--swatch:${theme.vars.accent}; --swatch-bg:${theme.vars.bg}`
-                                : (id === 'light' ? '--swatch:#a86e24; --swatch-bg:#f4f2ed' : '--swatch:#d4a45c; --swatch-bg:#12131a');
+      // Swatches show the theme in the mode currently in use.
+      const mode = window.Themes.mode();
+      const vars = window.Themes.varsFor(id, mode);
+      const swatch = vars ? `--swatch:${vars.accent}; --swatch-bg:${vars.bg}`
+                          : (mode === 'light' ? '--swatch:#a86e24; --swatch-bg:#f4f2ed' : '--swatch:#d4a45c; --swatch-bg:#12131a');
       item.innerHTML = `<span class="pass__swatch" style="${swatch}"></span><span class="menu__name">${theme.name}</span>` +
         (unlocked ? (id === current ? '<span class="menu__tag">current</span>' : '')
                   : `<span class="menu__tag menu__tag--lock">Lv ${level}</span>`);
@@ -331,6 +335,28 @@
   document.addEventListener('mousedown', (e) => { if (!menu.hidden && !menu.contains(e.target) && e.target !== paletteBtn) closeMenu(); });
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !menu.hidden) { closeMenu(); e.stopPropagation(); } }, true);
   document.addEventListener('themechange', renderMenu);
+
+  // ------------------------------------------------------ dev shortcuts
+  //
+  // Ctrl+Shift+Alt+L maxes the pass and Ctrl+Shift+Alt+R resets it — for
+  // trying the themes without writing three hundred formulas first. They
+  // are deliberately awkward to press by accident and are documented only
+  // in CLAUDE.md and the README's small print.
+
+  function setXp(value, note) {
+    xp = Math.max(0, Math.min(value, totalXp()));
+    localStorage.setItem('bpXp', xp);
+    render();
+    if (open) scrollToCurrent();
+    if (typeof flashStatus === 'function') flashStatus(note);
+  }
+  function totalXp() { let t = 0; for (let L = 1; L < MAX_LEVEL; L++) t += xpToNext(L); return t; }
+
+  document.addEventListener('keydown', (e) => {
+    if (!(e.ctrlKey && e.shiftKey && e.altKey)) return;
+    if (e.key.toLowerCase() === 'l') { e.preventDefault(); setXp(totalXp(), 'battle pass maxed (dev)'); }
+    else if (e.key.toLowerCase() === 'r') { e.preventDefault(); setXp(0, 'battle pass reset (dev)'); }
+  }, true);
 
   // --------------------------------------------------------------- boot
 

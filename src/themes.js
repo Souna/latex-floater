@@ -1,16 +1,21 @@
 // src/themes.js — the app's colour themes and how one is applied.
 //
-// "Dark" and "Light" are the two built-in themes and live entirely in
-// styles.css (the :root block and [data-theme="light"]). Everything else
-// here is a reward from the battle pass (battlepass.js): a full set of the
-// same CSS variables, written inline onto <html> when chosen so it overrides
-// the stylesheet, plus a data-theme attribute so styles.css can add a
-// flourish or two for the unusual ones (Nebula's glow, Terminal's
-// monospace, Gold's shimmer). Keeping every theme to the one variable set
-// means nothing else in the app — the grapher included, which reads the
-// variables through getComputedStyle — needs to know themes exist.
+// Every theme has a dark and a light mode, and the sun/moon button switches
+// mode within the current theme. "Default" is the built-in look and lives
+// entirely in styles.css (the :root block and html[data-theme="light"]).
+// Every other theme is a battle-pass reward (battlepass.js) authored here
+// as one full set of the same CSS variables, in whichever mode suits it;
+// the other mode is derived on demand in HSL — every hue kept, lightness
+// remapped so backgrounds go pale and text goes dark (or the reverse) and
+// accents stay legible. Inverting the colour space would have wrecked the
+// hues; this keeps Nebula purple in daylight. A chosen palette is written
+// inline onto <html> so it overrides the stylesheet, alongside data-theme
+// and data-mode attributes for the handful of flourishes in styles.css.
+// Nothing else in the app needs to know themes exist: the grapher reads
+// the variables through getComputedStyle.
 //
-// Public surface (window.Themes): THEMES, current(), apply(id), toggleBase().
+// Public surface (window.Themes): THEMES, current(), mode(), apply(id, mode),
+// toggleMode(), varsFor(id, mode).
 
 (function () {
   'use strict';
@@ -19,13 +24,12 @@
                 'fg', 'fg-dim', 'fg-faint', 'accent', 'accent-soft', 'accent-hover',
                 'danger', 'danger-bg', 'success'];
 
-  // Palette entries are in VARS order. `base` says which of the two built-in
-  // looks a theme resembles, so the sun/moon toggle knows which way to flip.
+  // Palette entries are in VARS order. `base` is the mode the palette was
+  // authored in; the other mode is derived.
   const palette = (list) => Object.fromEntries(VARS.map((k, i) => [k, list[i]]));
 
   const THEMES = {
-    dark:  { name: 'Dark',  base: 'dark',  vars: null },
-    light: { name: 'Light', base: 'light', vars: null },
+    default: { name: 'Default', base: 'dark', vars: null },
 
     slate: { name: 'Slate', base: 'dark', blurb: 'Cool and quiet.', vars: palette([
       '#161a22', '#1e2430', '#29303f', '#10131a', '#12151c', '#2a3140', '#3a4356',
@@ -78,27 +82,112 @@
       '#ff6b6b', '#3d1f1f', '#b5e36b']) }
   };
 
-  const root = document.documentElement;
-  let currentId = 'dark';
+  // ------------------------------------------------------ colour maths
 
-  function apply(id) {
-    const theme = THEMES[id] || THEMES.dark;
-    if (!THEMES[id]) id = 'dark';
+  function parse(color) {
+    let r, g, b;
+    const hex = color.match(/^#([0-9a-f]{6})$/i);
+    const rgba = color.match(/^rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/i);
+    if (hex) { const n = parseInt(hex[1], 16); r = n >> 16; g = (n >> 8) & 255; b = n & 255; }
+    else if (rgba) { r = +rgba[1]; g = +rgba[2]; b = +rgba[3]; }
+    else return { h: 0, s: 0, l: 0.5 };
+    r /= 255; g /= 255; b /= 255;
+    const max = Math.max(r, g, b), min = Math.min(r, g, b), l = (max + min) / 2;
+    if (max === min) return { h: 0, s: 0, l };
+    const d = max - min;
+    const s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+    let h;
+    if (max === r) h = (g - b) / d + (g < b ? 6 : 0);
+    else if (max === g) h = (b - r) / d + 2;
+    else h = (r - g) / d + 4;
+    return { h: h / 6, s, l };
+  }
+
+  function hsl(h, s, l) {
+    const f = (n) => {
+      const k = (n + h * 12) % 12;
+      const a = s * Math.min(l, 1 - l);
+      const v = l - a * Math.max(-1, Math.min(k - 3, 9 - k, 1));
+      return Math.round(v * 255).toString(16).padStart(2, '0');
+    };
+    return '#' + f(0) + f(8) + f(4);
+  }
+
+  function rgba(hex, alpha) {
+    const n = parseInt(hex.slice(1), 16);
+    return `rgba(${n >> 16},${(n >> 8) & 255},${n & 255},${alpha})`;
+  }
+
+  // The other mode of an authored palette: the same hues with lightness
+  // remapped. Surfaces take the background's hue (desaturated a little so a
+  // pale tint doesn't turn garish), text takes the foreground's, and the
+  // accent, danger and success colours keep theirs but move to a lightness
+  // that reads against the new surfaces.
+  function derive(vars, toMode) {
+    const bg = parse(vars.bg), fg = parse(vars.fg), ac = parse(vars.accent);
+    const dg = parse(vars.danger), sc = parse(vars.success);
+    const bs = Math.min(bg.s, 0.3);
+    const S = (l) => hsl(bg.h, bs, l);
+    const T = (l, s) => hsl(fg.h, Math.min(fg.s, s), l);
+    if (toMode === 'light') {
+      const al = Math.min(ac.l, 0.42);
+      const accent = hsl(ac.h, ac.s, al);
+      return {
+        bg: S(0.96), 'bg-raise': S(0.995), 'bg-hover': S(0.91), 'bg-sink': S(0.93), 'bg-bar': S(0.90),
+        border: S(0.82), 'border-strong': S(0.70),
+        fg: T(0.12, 0.4), 'fg-dim': T(0.40, 0.3), 'fg-faint': T(0.58, 0.25),
+        accent, 'accent-soft': rgba(accent, 0.14), 'accent-hover': hsl(ac.h, ac.s, al + 0.08),
+        danger: hsl(dg.h, dg.s, 0.42), 'danger-bg': hsl(dg.h, 0.6, 0.92), success: hsl(sc.h, sc.s, 0.32)
+      };
+    }
+    const al = Math.max(ac.l, 0.6);
+    const accent = hsl(ac.h, ac.s, al);
+    return {
+      bg: S(0.09), 'bg-raise': S(0.13), 'bg-hover': S(0.18), 'bg-sink': S(0.06), 'bg-bar': S(0.07),
+      border: S(0.20), 'border-strong': S(0.30),
+      fg: T(0.90, 0.4), 'fg-dim': T(0.60, 0.3), 'fg-faint': T(0.42, 0.25),
+      accent, 'accent-soft': rgba(accent, 0.16), 'accent-hover': hsl(ac.h, ac.s, Math.min(al + 0.08, 0.9)),
+      danger: hsl(dg.h, dg.s, 0.65), 'danger-bg': hsl(dg.h, 0.35, 0.18), success: hsl(sc.h, sc.s, 0.65)
+    };
+  }
+
+  const derived = new Map();
+  function varsFor(id, mode) {
+    const theme = THEMES[id];
+    if (!theme || !theme.vars) return null;
+    if (theme.base === mode) return theme.vars;
+    const key = id + ':' + mode;
+    if (!derived.has(key)) derived.set(key, derive(theme.vars, mode));
+    return derived.get(key);
+  }
+
+  // ---------------------------------------------------------- applying
+
+  const root = document.documentElement;
+  let currentId = 'default';
+  let currentMode = 'dark';
+
+  function apply(id, mode) {
+    if (!THEMES[id]) id = 'default';
+    if (mode !== 'light' && mode !== 'dark') mode = currentMode;
     currentId = id;
-    root.setAttribute('data-theme', id);
+    currentMode = mode;
+    // Default is entirely stylesheet-driven: data-theme picks the block.
+    root.setAttribute('data-theme', id === 'default' ? mode : id);
+    root.setAttribute('data-mode', mode);
+    const vars = varsFor(id, mode);
     for (const key of VARS) {
-      if (theme.vars) root.style.setProperty('--' + key, theme.vars[key]);
+      if (vars) root.style.setProperty('--' + key, vars[key]);
       else root.style.removeProperty('--' + key);
     }
     localStorage.setItem('theme', id);
-    document.dispatchEvent(new CustomEvent('themechange', { detail: { id } }));
+    localStorage.setItem('themeMode', mode);
+    document.dispatchEvent(new CustomEvent('themechange', { detail: { id, mode } }));
   }
 
-  // The sun/moon button: from any dark-ish theme go to Light, from any
-  // light-ish theme go to Dark.
-  function toggleBase() {
-    apply(THEMES[currentId].base === 'dark' ? 'light' : 'dark');
+  function toggleMode() {
+    apply(currentId, currentMode === 'dark' ? 'light' : 'dark');
   }
 
-  window.Themes = { THEMES, VARS, current: () => currentId, apply, toggleBase };
+  window.Themes = { THEMES, VARS, current: () => currentId, mode: () => currentMode, apply, toggleMode, varsFor };
 })();

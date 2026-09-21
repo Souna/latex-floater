@@ -35,7 +35,11 @@
       <span class="titlebar__name" data-tauri-drag-region>LaTeX Floater</span>
     </div>
     <div class="titlebar__controls">
-      <button id="btn-theme" class="titlebar__btn" title="Toggle light/dark theme">
+      <!-- LaTeX coins (battle pass); gold whatever the theme. -->
+      <span class="titlebar__coins" id="coins" title="LaTeX coins — earned from the battle pass. They do nothing. Yet.">
+        <svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true"><circle cx="8" cy="8" r="6.5" fill="currentColor" opacity="0.9"/><text x="8" y="11.2" text-anchor="middle" font-size="8.5" font-family="IBM Plex Mono, monospace" font-weight="600" fill="var(--bg-bar)">L</text></svg>
+        <span id="coin-count">0</span>
+      <button id="btn-theme" class="titlebar__btn" title="Toggle light/dark mode">
         <!-- sun icon (shown in dark mode to switch to light) -->
         <svg id="icon-sun" viewBox="0 0 16 16" width="12" height="12" fill="currentColor" aria-hidden="true">
           <circle cx="8" cy="8" r="3"/>
@@ -46,16 +50,13 @@
           <path d="M6 2a6 6 0 1 0 8 8 4.5 4.5 0 0 1-8-8z"/>
         </svg>
       </button>
-      <!-- Theme picker (battle-pass rewards) and the coin count. -->
+      <!-- Theme picker (battle-pass rewards). -->
       <button id="btn-palette" class="titlebar__btn" title="Themes">
         <svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
           <path d="M13.5 2.5 6.8 9.2M6.8 9.2c-1 1-1 2.3-2.2 3.2-.9.7-2.3.8-3.1.4 1.2-.6 1.1-1.7 1.6-2.7.6-1.1 1.9-1.4 2.7-.6l1-.3z"/>
           <path d="M13.5 2.5c.5.5.5 1.2 0 1.7l-5.2 5.2-1.5-1.5 5-5.2c.5-.5 1.2-.5 1.7-.2z"/>
         </svg>
       </button>
-      <span class="titlebar__coins" id="coins" title="LaTeX coins — earned from the battle pass. They do nothing. Yet.">
-        <svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true"><circle cx="8" cy="8" r="6.5" fill="currentColor" opacity="0.9"/><text x="8" y="11.2" text-anchor="middle" font-size="8.5" font-family="IBM Plex Mono, monospace" font-weight="600" fill="var(--bg-bar)">L</text></svg>
-        <span id="coin-count">0</span>
       </span>
       <input  id="opacity-slider" class="titlebar__opacity" type="range" min="20" max="100" value="100" step="5" title="Window opacity">
       <button id="btn-font-dec" class="titlebar__btn titlebar__btn--font" title="Decrease font size">A−</button>
