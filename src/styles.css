@@ -683,9 +683,7 @@ html[data-theme="gold"] .titlebar__name {
 html[data-theme="gold"] .titlebar__dot { box-shadow: 0 0 10px #f5c542; }
 /* Gold is polished metal, not a gold-tinted palette. Every bar gets a
    brushed-metal gradient with a specular streak that sweeps across it every
-   few seconds, plus a soft highlight that follows the mouse horizontally
-   (--mx is set by themes.js) so the surface catches the light as you move
-   over it. Buttons are bevelled: a bright top edge, a dark bottom edge.
+   few seconds. Buttons are bevelled: a bright top edge, a dark bottom edge.
    The field wears a gold ring with a glow; the level-50 node breathes. */
 html[data-theme="gold"] .titlebar,
 html[data-theme="gold"] .actions,
@@ -694,7 +692,6 @@ html[data-theme="gold"] .graph__bar,
 html[data-theme="gold"] .source {
   position: relative;
   background:
-    radial-gradient(260px 90px at var(--mx, 50%) 0%, rgba(255, 244, 196, 0.22), transparent 70%),
     linear-gradient(180deg, rgba(255, 226, 140, 0.10) 0%, rgba(0, 0, 0, 0) 45%, rgba(0, 0, 0, 0.28) 100%),
     var(--bg-bar);
   border-color: #8a6a1a;
