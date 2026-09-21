@@ -77,13 +77,34 @@
     </div>
     <div class="editor__row">
       <span id="mf" class="editor__field"></span>
+      <!-- The value of a closed expression (no free x or y), e.g. "= -2"
+           for a definite integral. Filled by app.js; hidden otherwise. -->
+      <span class="editor__result" id="result" hidden></span>
       <button id="btn-clear" class="editor__clear" title="Clear (Esc)">
         <svg viewBox="0 0 16 16" width="12" height="12" fill="currentColor" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
       </button>
     </div>
-    <!-- Empty twin of the history box, so the row stays at the vertical
-         centre no matter how the window is sized. -->
-    <div class="editor__below"></div>
+    <!-- The grapher. Its bar sits under the field at all times; the chevron
+         expands and collapses the plot below it (collapsed by default).
+         Collapsed, field and bar sit at the bottom of the editor area and
+         the history gets everything above; expanded, the plot and the
+         history split the space equally so the field ends up centred.
+         Everything inside is driven by graph.js. -->
+    <div class="graph is-collapsed" id="graph">
+      <div class="graph__bar">
+        <span class="graph__status" id="graph-status">Graph</span>
+        <button id="graph-reset" class="graph__btn" title="Reset view (or double-click the graph)" hidden>
+          <svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M2 8a6 6 0 1 0 1.8-4.3M2 2v3h3"/></svg>
+        </button>
+        <button id="graph-toggle" class="graph__btn graph__btn--toggle" title="Expand graph">
+          <svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M3 10l5-5 5 5"/></svg>
+        </button>
+      </div>
+      <div class="graph__canvas-wrap" id="graph-canvas-wrap" hidden>
+        <canvas id="graph-canvas"></canvas>
+        <div class="graph__tip" id="graph-tip" hidden></div>
+      </div>
+    </div>
   </section>
 
   <!-- =================================================================
@@ -100,14 +121,18 @@
        ================================================================= -->
   <footer class="actions">
     <button id="copy-latex"  class="btn btn--primary">Copy LaTeX</button>
-<button id="copy-png"    class="btn">PNG</button>
+    <button id="copy-png"    class="btn">PNG</button>
     <div class="actions__status" id="status" aria-live="polite"></div>
   </footer>
 
   <script src="vendor/jquery.min.js"></script>
   <script src="vendor/mathquill.min.js"></script>
-  <!-- bridge.js defines window.floater; app.js is written against it. -->
+  <!-- bridge.js defines window.floater; app.js is written against it.
+       latex-math.js and graph.js define window.LatexMath and window.Grapher,
+       which app.js drives. -->
   <script src="bridge.js"></script>
+  <script src="latex-math.js"></script>
+  <script src="graph.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

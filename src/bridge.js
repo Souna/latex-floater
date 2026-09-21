@@ -44,6 +44,34 @@ window.floater = {
 
   setOpacity: (value) => invoke('set_opacity', { value }),
 
+  // Grow or shrink the window height by `deltaPx` CSS pixels, width kept.
+  // Used when the graph panel expands in a window too short to hold it.
+  // A window sitting low on the screen would grow straight off the bottom,
+  // so after growing, the window is nudged up as far as needed to keep its
+  // bottom edge inside the monitor's work area (above the taskbar/dock).
+  resizeBy: async (deltaPx) => {
+    const { LogicalSize, LogicalPosition, currentMonitor } = window.__TAURI__.window;
+    const scale = await appWindow.scaleFactor();
+    const size = (await appWindow.innerSize()).toLogical(scale);
+    await appWindow.setSize(new LogicalSize(size.width, Math.max(280, size.height + deltaPx)));
+    if (deltaPx <= 0) return;
+    const monitor = await currentMonitor();
+    if (!monitor) return;
+    const area = monitor.workArea || { position: monitor.position, size: monitor.size };
+    const areaTop = area.position.y / scale;
+    const areaBottom = (area.position.y + area.size.height) / scale;
+    const pos = (await appWindow.outerPosition()).toLogical(scale);
+    const outer = (await appWindow.outerSize()).toLogical(scale);
+    const overflow = pos.y + outer.height - areaBottom;
+    if (overflow > 0) await appWindow.setPosition(new LogicalPosition(pos.x, Math.max(areaTop, pos.y - overflow)));
+  },
+
+  // Lower bound on the window height in CSS pixels (width stays 480).
+  setMinHeight: (h) => {
+    const { LogicalSize } = window.__TAURI__.window;
+    return appWindow.setMinSize(new LogicalSize(480, h));
+  },
+
   onFocus: (cb) => appWindow.onFocusChanged(({ payload: focused }) => { if (focused) cb(); }),
 
   renderPng: (latex, fontSize) => renderLatexToPng(latex, fontSize),

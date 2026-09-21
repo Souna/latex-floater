@@ -83,7 +83,7 @@ const mf = MQ.MathField(mqEl, {
   // the paren's closer instead of opening its own abs-value pair. Restricting
   // mismatched brackets makes '|' only pair with another '|'.
   restrictMismatchedBrackets: true,
-  autoCommands: 'pi theta phi alpha beta gamma delta epsilon zeta eta iota kappa lambda mu nu xi rho sigma tau upsilon chi psi omega infty sqrt',
+  autoCommands: 'pi theta phi alpha beta gamma delta epsilon zeta eta iota kappa lambda mu nu xi rho sigma tau upsilon chi psi omega infty sqrt int sum prod',
   autoOperatorNames: 'sin cos tan cot sec csc sinh cosh tanh arcsin arccos arctan log ln det lim',
   handlers: {
     edit: () => {
@@ -150,7 +150,44 @@ historyList.addEventListener('click', (e) => {
 const sourceOut = document.getElementById('source-out');
 
 function updateSource() {
-  sourceOut.textContent = mf.latex() || '';
+  const latex = mf.latex() || '';
+  sourceOut.textContent = latex;
+  updateResult(latex);
+  if (graphOpen) window.Grapher.setLatex(latex);
+}
+
+// ---------------------------------------------------------------------------
+// Result readout.
+//
+// If what's in the field is a closed expression — no "=", no free x or y —
+// its value is shown at the bottom right of the field ("= -2" for a
+// definite integral), the way Desmos does. LatexMath.evaluate does the work:
+// arithmetic, functions, constants, and numerically evaluated \int, \sum
+// and \prod. Anything that doesn't parse, or isn't a closed value, simply
+// shows nothing; the graph bar is where parse errors are reported.
+// ---------------------------------------------------------------------------
+
+const resultEl = document.getElementById('result');
+
+function formatResult(v) {
+  if (!Number.isFinite(v)) return v > 0 ? '∞' : v < 0 ? '-∞' : 'undefined';
+  const a = Math.abs(v);
+  if (a !== 0 && (a >= 1e12 || a < 1e-6)) return v.toExponential(6).replace(/\.?0+e/, 'e');
+  // Ten significant digits, which turns the numerical -2.0000000000004 of
+  // an integral back into -2, without hiding genuine digits of sqrt(2).
+  return String(parseFloat(v.toPrecision(10)));
+}
+
+function updateResult(latex) {
+  let text = '';
+  try {
+    const v = window.LatexMath.evaluate(latex);
+    if (v !== null && !Number.isNaN(v)) text = '= ' + formatResult(v);
+  } catch {
+    // Not a closed expression, or not parseable: no readout.
+  }
+  resultEl.textContent = text;
+  resultEl.hidden = !text;
 }
 
 // ---------------------------------------------------------------------------
@@ -240,7 +277,7 @@ document.getElementById('btn-clear').addEventListener('click', clearField);
 // after which typing went nowhere until the user found the strip. Treat a
 // click anywhere in the editor box as a click into the field.
 document.querySelector('.editor').addEventListener('mousedown', (e) => {
-  if (mqEl.contains(e.target) || e.target.closest('#btn-clear, .history__item')) return;
+  if (mqEl.contains(e.target) || e.target.closest('#btn-clear, .history__item, .graph')) return;
   e.preventDefault();
   mf.focus();
   mf.moveToRightEnd();
@@ -362,6 +399,95 @@ document.addEventListener('wheel', (e) => {
 }, { passive: false });
 
 // ---------------------------------------------------------------------------
+// Grapher panel.
+//
+// The graph's bar sits under the field permanently; its chevron expands the
+// plot below it. Collapsed, the field and bar sit at the bottom of the
+// editor area with the history above; expanded, the plot and the history
+// share the space equally, so the field moves up to the centre. The plot
+// needs real height to be useful (and so, by symmetry, does the history
+// above it) and the default window is short, so expanding grows the window
+// by whatever the editor area is missing, and collapsing gives that back. The amount grown
+// is remembered in localStorage alongside the open state, so a relaunch
+// that restores the (taller) window with the graph open still knows how
+// much to shrink on collapse. graph.js owns everything inside the panel;
+// this is just the plumbing around it.
+// ---------------------------------------------------------------------------
+
+const GRAPH_HEIGHT = 220;   // comfortable plot height the window is grown to provide
+const GRAPH_MIN = 120;      // must match .graph's min-height in styles.css
+
+const graphPanel  = document.getElementById('graph');
+const graphWrap   = document.getElementById('graph-canvas-wrap');
+const graphToggle = document.getElementById('graph-toggle');
+const graphReset  = document.getElementById('graph-reset');
+const graphStatus = document.getElementById('graph-status');
+const editorEl    = document.querySelector('.editor');
+const editorRow   = document.querySelector('.editor__row');
+
+let graphOpen  = localStorage.getItem('graphOpen') === 'true';
+let graphGrown = parseInt(localStorage.getItem('graphGrown') || '0', 10) || 0;
+
+// Everything visual about expanded vs collapsed, with no window resizing.
+function applyGraphLayout(open) {
+  graphPanel.classList.toggle('is-collapsed', !open);
+  graphWrap.hidden = !open;
+  graphReset.hidden = !open;
+  graphToggle.title = open ? 'Collapse graph' : 'Expand graph';
+  if (!open) graphStatus.textContent = 'Graph';
+  graphStatus.classList.toggle('is-error', false);
+}
+
+// Grows the window until the editor area can hold the plot at its minimum
+// height plus an equal-height history box above the field. Normally runs
+// once, when the graph is first expanded; it also runs at boot when the
+// graph was left open, which is a no-op when the window-state plugin has
+// restored the grown window, and a rescue when it hasn't (a crash, or the
+// app killed before the plugin could save).
+async function ensureGraphRoom() {
+  const available = editorEl.clientHeight - editorRow.offsetHeight - 16 - 8;
+  const need = 2 * GRAPH_HEIGHT - available;
+  if (need <= 0) return;
+  graphGrown += need;
+  localStorage.setItem('graphGrown', graphGrown);
+  await window.floater.resizeBy(need);
+}
+
+// While the graph is expanded the window may not be shrunk below what the
+// layout needs (plot and history each at the plot's minimum, plus the
+// field row and chrome); otherwise the panel would overflow the editor
+// area and hide the bars below it. Collapsing restores the normal minimum.
+function applyGraphMinHeight(open) {
+  if (!open) return window.floater.setMinHeight(280);
+  const chrome = window.innerHeight - editorEl.clientHeight;
+  return window.floater.setMinHeight(Math.ceil(chrome + editorRow.offsetHeight + 24 + 2 * GRAPH_MIN));
+}
+
+async function setGraphOpen(open) {
+  graphOpen = open;
+  localStorage.setItem('graphOpen', open);
+  applyGraphLayout(open);
+
+  if (open) {
+    await ensureGraphRoom();
+    await applyGraphMinHeight(true);
+    window.Grapher.refresh();
+    window.Grapher.setLatex(mf.latex() || '');
+  } else {
+    await applyGraphMinHeight(false);
+    if (graphGrown > 0) {
+      const delta = graphGrown;
+      graphGrown = 0;
+      localStorage.setItem('graphGrown', 0);
+      await window.floater.resizeBy(-delta);
+    }
+  }
+  mf.focus();
+}
+
+graphToggle.addEventListener('click', () => setGraphOpen(!graphOpen));
+
+// ---------------------------------------------------------------------------
 // Light / dark theme toggle.
 // ---------------------------------------------------------------------------
 
@@ -374,6 +500,7 @@ function applyTheme(theme) {
   iconSun.style.display  = isLight ? 'none'  : '';
   iconMoon.style.display = isLight ? ''      : 'none';
   localStorage.setItem('theme', theme);
+  window.Grapher.redraw();
 }
 
 applyTheme(localStorage.getItem('theme') || 'dark');
@@ -446,6 +573,16 @@ applyFontSize();
 renderHistory();
 window.floater.setOpacity(parseFloat(localStorage.getItem('opacity') || '1'));
 updateSource();
+// Restore the panel. The window-state plugin normally brings back the
+// taller window, so ensureGraphRoom() finds nothing to do; graphGrown
+// remembers what to give back on collapse either way.
+applyGraphLayout(graphOpen);
+if (graphOpen) {
+  ensureGraphRoom().then(() => applyGraphMinHeight(true)).then(() => {
+    window.Grapher.refresh();
+    window.Grapher.setLatex(mf.latex() || '');
+  });
+}
 setTimeout(() => mf.focus(), 50);
 
 // Re-focus the math field whenever the app window comes back into focus.

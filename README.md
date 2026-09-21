@@ -6,13 +6,15 @@ A small always-on-top desktop window for writing LaTeX fast. Type directly into 
 
 - Always-on-top frameless window (remembers its position and size between sessions)
 - MathQuill-powered editor with direct typing — `\frac`, `\sqrt`, `^`, `_`, and typed Greek-letter/function names all work as you'd expect
-- Typed shorthand substitution: lowercase Greek names like `alpha` and `theta` become `\alpha` and `\theta` as soon as you finish typing them; `inf` and uppercase Greek names like `Gamma` substitute when you press Space
+- Typed shorthand substitution: lowercase Greek names like `alpha` and `theta`, plus `sqrt`, `int`, `sum` and `prod`, convert as soon as you finish typing them; `inf` and uppercase Greek names like `Gamma` substitute when you press Space
 - Live LaTeX source readout under the editor, click it to copy instantly
+- Closed expressions show their value in the corner of the field as you type, including definite integrals, sums and products, e.g. `\int_\pi^{2\pi} \sin x\,dx` shows `= -2`
 - Expression history — step back through your last 20 expressions with `Alt+Up` / `Alt+Down`
 - Two output formats:
   - **Copy LaTeX** — for Overleaf, Obsidian, Notion (`$$...$$`), Jupyter, GitHub, Markdown, Discord
   - **PNG** — for Google Docs, email, Slack, PowerPoint, or anywhere else without math rendering
 - Light/dark theme toggle, an opacity slider, and font-size controls in the titlebar
+- A grapher: the chevron on the bar under the field expands a Desmos-style plot of the current expression. It handles `y = f(x)`, `x = g(y)`, bare expressions in `x`, and implicit equations like `x^2+y^2=4`. Drag to pan, scroll to zoom, double-click to reset. Axis intercepts, maxima and minima, leftmost/rightmost points and self-intersections are marked; hover a point for its coordinates, or click anywhere on the curve to read it there and drag to slide along it
 - Global hotkey `Ctrl+Alt+L` (`Cmd+Alt+L` on macOS) summons and focuses the window from any application
 - Keyboard shortcuts: `Ctrl+Enter` copy LaTeX, `Esc` copy and clear, `Alt+Up`/`Alt+Down` browse history
 
@@ -57,7 +59,9 @@ latex-floater/
     index.html            ← UI markup
     styles.css            ← Dark/light theme, IBM Plex typography
     bridge.js             ← window.floater: clipboard, window chrome, PNG rendering
-    app.js                ← MathQuill wiring, history, shorthand substitution, copy handlers, shortcuts
+    latex-math.js         ← parses MathQuill's LaTeX into an evaluable function for the grapher
+    graph.js              ← the grapher: canvas plot, pan/zoom, points of interest
+    app.js                ← MathQuill wiring, history, shorthand substitution, copy handlers, shortcuts, graph toggle
     fonts/                ← IBM Plex, self-hosted
   src-tauri/              ← the native shell (Rust)
     src/lib.rs            ← clipboard and opacity commands, global hotkey, plugins

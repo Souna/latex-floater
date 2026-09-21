@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "What the main window's JS may ask of the native side: the titlebar buttons, the drag region, and the focus event used to refocus the math field. The app's own commands (copy_text, copy_image, set_opacity) are allowed implicitly.",
+  "description": "What the main window's JS may ask of the native side: the titlebar buttons, the drag region, the focus event used to refocus the math field, and reading/setting the window size for the graph panel. The app's own commands (copy_text, copy_image, set_opacity) are allowed implicitly.",
   "windows": ["main"],
   "permissions": [
     "core:default",
@@ -9,6 +9,14 @@
     "core:window:allow-close",
     "core:window:allow-set-always-on-top",
     "core:window:allow-start-dragging",
-    "core:window:allow-set-focus"
+    "core:window:allow-set-focus",
+    "core:window:allow-inner-size",
+    "core:window:allow-scale-factor",
+    "core:window:allow-set-size",
+    "core:window:allow-current-monitor",
+    "core:window:allow-outer-position",
+    "core:window:allow-outer-size",
+    "core:window:allow-set-position",
+    "core:window:allow-set-min-size"
   ]
 }
