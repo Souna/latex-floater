@@ -1,6 +1,10 @@
-# Regenerable: `npm install` and `npm run pack` / `dist:win` / `dist:mac`.
+# Regenerable: `npm install`, `npm run vendor` (run automatically by
+# `npm run dev` / `npm run build`), and the Rust build in src-tauri/target/.
 # Also platform-specific, so useless to share between the Windows and Mac machines.
 node_modules/
+src/vendor/
+src-tauri/target/
+src-tauri/gen/schemas/
 dist/
 
 # Per-machine Claude Code settings.

@@ -41,28 +41,38 @@ function saveToHistory(latex) {
   if (history[0] === latex) return;   // don't duplicate consecutive entries
   history.unshift(latex);
   localStorage.setItem('history', JSON.stringify(history.slice(0, HISTORY_MAX)));
+  renderHistory();
 }
 
 let historyIndex = -1;   // -1 = current unsaved draft
 let historyDraft = '';   // saved draft when user starts navigating
 let navigating   = false; // prevents edit handler from resetting historyIndex mid-navigate
 
+// Loads history entry `index` into the field (-1 restores the draft the user
+// was typing before they started browsing). Shared by Alt+Up/Down and by
+// clicking an entry in the visible stack.
+function showHistoryEntry(index) {
+  const history = loadHistory();
+  if (historyIndex === -1 && index !== -1) historyDraft = mf.latex();
+  historyIndex = index;
+
+  navigating = true;
+  mf.latex(index === -1 ? historyDraft : history[index]);
+  navigating = false;
+  updateSource();
+  markActiveHistory();
+  mf.focus();
+  mf.moveToRightEnd();
+}
+
 function navigateHistory(direction) {
   const history = loadHistory();
   if (history.length === 0) return;
-
   if (direction === 'up') {
-    if (historyIndex === -1) historyDraft = mf.latex();
-    if (historyIndex < history.length - 1) historyIndex++;
-  } else {
-    if (historyIndex === -1) return;
-    historyIndex--;
+    if (historyIndex < history.length - 1) showHistoryEntry(historyIndex + 1);
+  } else if (historyIndex !== -1) {
+    showHistoryEntry(historyIndex - 1);
   }
-
-  navigating = true;
-  mf.latex(historyIndex === -1 ? historyDraft : history[historyIndex]);
-  navigating = false;
-  updateSource();
 }
 
 const mf = MQ.MathField(mqEl, {
@@ -77,10 +87,60 @@ const mf = MQ.MathField(mqEl, {
   autoOperatorNames: 'sin cos tan cot sec csc sinh cosh tanh arcsin arccos arctan log ln det lim',
   handlers: {
     edit: () => {
-      if (!navigating) historyIndex = -1;
+      if (!navigating && historyIndex !== -1) { historyIndex = -1; markActiveHistory(); }
       updateSource();
     }
   }
+});
+
+// ---------------------------------------------------------------------------
+// The visible history stack.
+//
+// Every committed expression (copied or cleared) is rendered as static math
+// above the field, newest nearest the field, each older one a little dimmer,
+// so the last few things you wrote stay in view without taking focus away
+// from the input. Clicking one loads it into the field; Alt+Up/Down walks the
+// same list and highlights where it is. The stack is rebuilt in full whenever
+// history changes — at most 20 small static renders, cheap enough that
+// incremental DOM surgery isn't worth its complexity.
+// ---------------------------------------------------------------------------
+
+const historyBox  = document.getElementById('history');
+const historyList = document.getElementById('history-list');
+
+function historyOpacity(index) {
+  return Math.max(0.2, 0.65 - index * 0.09);
+}
+
+function renderHistory() {
+  const history = loadHistory();
+  historyList.textContent = '';
+  // Oldest first in the DOM so the newest ends up directly above the field.
+  for (let i = history.length - 1; i >= 0; i--) {
+    const item = document.createElement('button');
+    item.type = 'button';
+    item.className = 'history__item';
+    item.dataset.index = i;
+    item.title = 'Load into the editor';
+    item.style.opacity = historyOpacity(i);
+    if (i === historyIndex) item.classList.add('is-active');
+    const math = document.createElement('span');
+    item.appendChild(math);
+    MQ.StaticMath(math).latex(history[i]);
+    historyList.appendChild(item);
+  }
+  historyBox.scrollTop = historyBox.scrollHeight;
+}
+
+function markActiveHistory() {
+  for (const item of historyList.children) {
+    item.classList.toggle('is-active', Number(item.dataset.index) === historyIndex);
+  }
+}
+
+historyList.addEventListener('click', (e) => {
+  const item = e.target.closest('.history__item');
+  if (item) showHistoryEntry(Number(item.dataset.index));
 });
 
 // ---------------------------------------------------------------------------
@@ -116,11 +176,11 @@ async function copyLatex() {
   flashStatus(`copied LaTeX (${latex.length} chars)`);
 }
 
-// PNG export: rendered entirely off-screen (see src/capture.html/js and the
-// png:render handler in main.js) so a wide or tall expression never has to
-// resize the real, visible app window — the invisible capture window grows
-// or shrinks to fit instead. Also sidesteps needing to flip this window's
-// theme colors, since the capture page is always white-background/dark-text.
+// PNG export: window.floater.renderPng (bridge.js) rasterises the LaTeX
+// in-page via MathJax's SVG output and hands back a PNG data URL, which
+// copyImage ships to the native clipboard. The export is always
+// white-background/dark-text regardless of the app theme, since the image
+// isn't meant to carry the UI's colours.
 async function copyPng() {
   const latex = mf.latex() || '';
   if (!latex.trim()) return flashStatus('empty — nothing to copy', 'error');
@@ -175,42 +235,68 @@ const clearField = async () => {
 };
 document.getElementById('btn-clear').addEventListener('click', clearField);
 
+// The math field is a 40px strip vertically centred in a much taller editor
+// area. Clicking the empty space around it used to move focus to <body>,
+// after which typing went nowhere until the user found the strip. Treat a
+// click anywhere in the editor box as a click into the field.
+document.querySelector('.editor').addEventListener('mousedown', (e) => {
+  if (mqEl.contains(e.target) || e.target.closest('#btn-clear, .history__item')) return;
+  e.preventDefault();
+  mf.focus();
+  mf.moveToRightEnd();
+});
+
 // ---------------------------------------------------------------------------
 // Shorthand substitution.
 //
 // When the user types a word from this map and then presses Space, we delete
 // the typed letters and replace them with the LaTeX symbol. This runs in the
 // capture phase so we intercept Space before MathQuill does — necessary because
-// spaceBehavesLikeTab would otherwise consume the Space before autoCommands
-// gets a chance to fire.
+// spaceBehavesLikeTab would otherwise consume the Space before we see it.
+//
+// Lowercase Greek letters are deliberately NOT in this map. MathQuill's own
+// autoCommands (configured above) already turn "pi", "theta", "alpha", ...
+// into the symbol the instant the last letter is typed, so by the time Space
+// arrives there are no letters left to replace. An earlier version listed
+// them here anyway and kept its own tally of letters typed, then sent that
+// many Backspaces on Space — the first deleted the already-substituted
+// symbol and the rest ate whatever came before it, so "x+pi " came out as
+// "x\pi". Only put words here that MathQuill won't substitute by itself.
 // ---------------------------------------------------------------------------
 
 const SHORTHANDS = {
   // Custom (no matching LaTeX command name)
   'inf':     '\\infty',
-  // Greek lowercase
-  'alpha':   '\\alpha',   'beta':    '\\beta',    'gamma':   '\\gamma',
-  'delta':   '\\delta',   'epsilon': '\\epsilon', 'zeta':    '\\zeta',
-  'eta':     '\\eta',     'theta':   '\\theta',   'iota':    '\\iota',
-  'kappa':   '\\kappa',   'lambda':  '\\lambda',  'mu':      '\\mu',
-  'nu':      '\\nu',      'xi':      '\\xi',      'pi':      '\\pi',
-  'rho':     '\\rho',     'sigma':   '\\sigma',   'tau':     '\\tau',
-  'upsilon': '\\upsilon', 'phi':     '\\phi',     'chi':     '\\chi',
-  'psi':     '\\psi',     'omega':   '\\omega',
-  // Greek uppercase
+  // Greek uppercase — no MathQuill autoCommand covers these.
   'Gamma':   '\\Gamma',   'Delta':   '\\Delta',   'Theta':   '\\Theta',
   'Lambda':  '\\Lambda',  'Xi':      '\\Xi',      'Pi':      '\\Pi',
   'Sigma':   '\\Sigma',   'Upsilon': '\\Upsilon', 'Phi':     '\\Phi',
   'Psi':     '\\Psi',     'Omega':   '\\Omega',
 };
 
-let letterBuffer = '';
+// The word to substitute is read back from MathQuill's own node list at the
+// moment Space is pressed, rather than from a running tally of keystrokes.
+// A keystroke tally can't tell when the caret moved (mouse click, history
+// navigation, an autoCommand collapsing letters into one symbol) and would
+// then delete the wrong number of things. Walking left from the caret over
+// plain-letter nodes always reflects exactly what is about to be replaced.
+// `ctrlSeq === letter` is the same test MathQuill uses internally to skip
+// letters already absorbed into an operator name like "sin". The `-1` index
+// is MathQuill's L constant (left sibling); the chain ends with a falsy 0.
+function wordLeftOfCaret() {
+  const cursor = mf.__controller.cursor;
+  let word = '';
+  for (let node = cursor[-1]; node && node.letter && node.ctrlSeq === node.letter; node = node[-1]) {
+    word = node.letter + word;
+  }
+  return word;
+}
 
 // ---------------------------------------------------------------------------
 // Keyboard shortcuts + shorthand detection (capture phase).
 //   Ctrl+Enter → Copy LaTeX
 //   Esc        → Clear field
-//   Space      → Substitute shorthand if buffer matches, otherwise pass through
+//   Space      → Substitute shorthand if the word left of the caret matches
 // ---------------------------------------------------------------------------
 
 document.addEventListener('keydown', (e) => {
@@ -250,23 +336,18 @@ document.addEventListener('keydown', (e) => {
     return;
   }
 
-  // Track letters typed into the field to detect shorthands.
-  if (!e.ctrlKey && !e.metaKey && !e.altKey) {
-    if (e.key.length === 1 && /[a-zA-Z]/.test(e.key)) {
-      letterBuffer += e.key;
-    } else if (e.key === ' ') {
-      const cmd = SHORTHANDS[letterBuffer];
-      if (cmd) {
-        e.preventDefault();
-        e.stopPropagation();
-        for (let i = 0; i < letterBuffer.length; i++) mf.keystroke('Backspace');
-        mf.cmd(cmd);
-        updateSource();
-      }
-      letterBuffer = '';
-    } else {
-      // Any non-letter, non-space key (^, _, +, Backspace, Tab…) resets the buffer.
-      letterBuffer = e.key === 'Backspace' ? letterBuffer.slice(0, -1) : '';
+  // Shorthand substitution on Space (see SHORTHANDS above). Only when the
+  // math field itself has focus — a Space while a button is focused is the
+  // button's to handle, not ours.
+  if (e.key === ' ' && !e.ctrlKey && !e.metaKey && !e.altKey && mqEl.contains(document.activeElement)) {
+    const word = wordLeftOfCaret();
+    const cmd = SHORTHANDS[word];
+    if (cmd) {
+      e.preventDefault();
+      e.stopPropagation();
+      for (let i = 0; i < word.length; i++) mf.keystroke('Backspace');
+      mf.cmd(cmd);
+      updateSource();
     }
   }
 }, true); // capture phase — fires before MathQuill's internal handlers
@@ -338,6 +419,9 @@ let fontSize = parseInt(localStorage.getItem('fontSize') || FONT_DEFAULT, 10);
 
 function applyFontSize() {
   mqEl.style.fontSize = fontSize + 'px';
+  // History entries follow the field's size but stay a step smaller, so the
+  // live input is always the largest thing in the stack.
+  historyList.style.fontSize = Math.round(fontSize * 0.85) + 'px';
   localStorage.setItem('fontSize', fontSize);
 }
 
@@ -359,6 +443,7 @@ document.getElementById('btn-font-dec').addEventListener('click', decreaseFontSi
 // ---------------------------------------------------------------------------
 
 applyFontSize();
+renderHistory();
 window.floater.setOpacity(parseFloat(localStorage.getItem('opacity') || '1'));
 updateSource();
 setTimeout(() => mf.focus(), 50);

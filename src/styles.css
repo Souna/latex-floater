@@ -114,7 +114,6 @@ body {
    ========================================================================= */
 
 .titlebar {
-  -webkit-app-region: drag;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -148,7 +147,6 @@ body {
   display: flex;
   gap: 2px;
   align-items: center;
-  -webkit-app-region: no-drag;
 }
 
 .titlebar__btn {
@@ -170,7 +168,6 @@ body {
 .titlebar__btn--font { width: auto; padding: 0 5px; font-size: 10px; font-family: inherit; }
 
 .titlebar__opacity {
-  -webkit-app-region: no-drag;
   width: 56px;
   height: 3px;
   accent-color: var(--accent);
@@ -185,44 +182,113 @@ body {
    Math editor
    ========================================================================= */
 
+/* The editor section is a vertical stack: history above, the field row in
+   the middle, an empty spacer below. History and spacer share the leftover
+   height equally, which is what keeps the field anchored at the centre
+   while the history grows upward. */
 .editor {
   position: relative;
   flex: 1;
   min-height: 60px;
-  padding: 10px 36px 10px 12px;
+  padding: 8px 12px;
   background: var(--bg);
   display: flex;
-  align-items: center;
+  flex-direction: column;
   user-select: text;
   transition: background 0.15s;
 }
 
-.editor__field {
+.editor__history {
+  flex: 1 1 0;
+  min-height: 0;
+  overflow-y: auto;
+  scrollbar-width: none;
+  display: flex;
+  flex-direction: column;
+  padding: 0 26px 0 0;
+}
+.editor__history::-webkit-scrollbar { display: none; }
+
+/* margin-top:auto (rather than justify-content:flex-end on the scroll box)
+   pins the list to the bottom while still letting the overflow at the top
+   be scrolled to — flex-end alignment inside a scroll container makes the
+   overflowed part unreachable. */
+.editor__history-list {
+  margin-top: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  padding-bottom: 6px;
+}
+
+/* Each entry's opacity is set inline by app.js by age; hover and the
+   Alt+Up/Down selection override that, hence the !important. */
+.history__item {
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-sm);
+  padding: 3px 8px;
+  margin-left: 2px;
+  color: var(--fg);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: opacity 0.12s, background-color 0.12s;
+}
+.history__item:hover     { opacity: 1 !important; background: var(--bg-hover); }
+.history__item.is-active { opacity: 1 !important; background: var(--accent-soft); }
+
+.editor__row {
+  flex: 0 0 auto;
+  position: relative;
+  display: flex;
+  align-items: center;
+  padding-right: 26px;
+}
+
+.editor__below {
+  flex: 1 1 0;
+  min-height: 0;
+}
+
+/* MathQuill puts its "mq-editable-field mq-math-mode" classes on the #mf
+   element ITSELF (it doesn't wrap it), so every override of MathQuill's
+   field styling has to be a compound selector on that same element —
+   ".editor__field.mq-editable-field" — not a descendant one. An earlier
+   version used ".editor__field .mq-editable-field" (with a space), which
+   matched nothing, so MathQuill's stock 1px gray border and blue focus glow
+   were showing the whole time. Where specificities tie, source order decides:
+   mathquill.css is linked BEFORE this file in index.html for exactly that
+   reason, so the rules below win even against MathQuill's own !important
+   selection colours.
+
+   The field gets its own themed border and raised background so it reads
+   as "the input" against the history stack above it — MathQuill's stock
+   gray border was replaced, not just removed. */
+.editor__field,
+.editor__field.mq-editable-field {
   flex: 1;
   width: 100%;
-  min-height: 40px;
+  min-height: 44px;
+  margin: 0;
+  padding: 6px 10px !important;
+  border: 1px solid var(--border-strong) !important;
+  border-radius: var(--radius);
+  box-shadow: none !important;
+  background: var(--bg-raise) !important;
   font-size: 18px;
-  color: var(--fg);
-  background: transparent;
+  color: var(--fg) !important;
   cursor: text;
   display: flex;
   align-items: center;
+  transition: border-color 0.12s, box-shadow 0.12s;
 }
 
-.editor__field .mq-editable-field {
-  border: none !important;
-  box-shadow: none !important;
-  background: transparent !important;
-  color: var(--fg) !important;
-  width: 100%;
-  min-height: 40px;
-  display: flex;
-  align-items: center;
-  padding: 0 !important;
-}
-
-.editor__field .mq-editable-field:focus {
-  box-shadow: none !important;
+.editor__field.mq-editable-field.mq-focused,
+.editor__field.mq-editable-field:focus {
+  border-color: var(--accent) !important;
+  box-shadow: 0 0 0 2px var(--accent-soft) !important;
   outline: none !important;
 }
 
@@ -230,10 +296,13 @@ body {
   border-color: var(--accent) !important;
 }
 
+.editor__field .mq-selection,
 .editor__field .mq-selection .mq-non-leaf,
-.editor__field .mq-selection .mq-leaf {
+.editor__field .mq-selection .mq-leaf,
+.editor__field .mq-selection .mq-scaled {
   background: var(--accent-soft) !important;
   color: var(--fg) !important;
+  border-color: var(--fg) !important;
 }
 
 /* MathQuill renders math symbols in the inherited color. Force it to follow
@@ -245,7 +314,7 @@ body {
 
 .editor__clear {
   position: absolute;
-  right: 10px;
+  right: 0;
   top: 50%;
   transform: translateY(-50%);
   width: 22px;

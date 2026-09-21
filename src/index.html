@@ -4,22 +4,35 @@
   <meta charset="UTF-8" />
   <title>LaTeX Floater</title>
 
-  <!-- IBM Plex gives us a characterful sans + mono pair without going generic.
+  <!-- Third-party files come from vendor/, which scripts/vendor.js fills from
+       node_modules before every dev run and build — Tauri bundles this
+       directory as-is, so nothing outside it can be referenced.
+
+       mathquill.css must come BEFORE styles.css: several of our overrides of
+       MathQuill's field styling tie with its own rules on specificity (some
+       on both sides are !important), and in a tie the later stylesheet wins.
+       With the order reversed, MathQuill's border, focus glow and system-blue
+       selection colour beat ours — see the .editor__field comment in styles.css.
+
+       IBM Plex gives us a characterful sans + mono pair without going generic.
        Mono is used for the "LaTeX source" readout; sans for everything else.
        The @font-face rules (self-hosted, src/fonts/) live in styles.css —
        see the comment there for why this isn't loaded from Google Fonts. -->
+  <link rel="stylesheet" href="vendor/mathquill.css">
   <link rel="stylesheet" href="styles.css">
-  <link rel="stylesheet" href="../node_modules/mathquill/build/mathquill.css">
 </head>
 <body>
   <!-- =================================================================
        Title bar. The drag region spans the top and lets the user move
-       the window. Buttons are marked no-drag so clicks register.
+       the window. Tauri starts a native drag on mousedown of any element
+       carrying data-tauri-drag-region — and only that element, not its
+       children — so the bar and each piece of the brand carry it, while
+       the buttons and slider on the right don't and so still get clicks.
        ================================================================= -->
-  <header class="titlebar">
-    <div class="titlebar__brand">
-      <span class="titlebar__dot" aria-hidden="true"></span>
-      <span class="titlebar__name">LaTeX Floater</span>
+  <header class="titlebar" data-tauri-drag-region>
+    <div class="titlebar__brand" data-tauri-drag-region>
+      <span class="titlebar__dot" aria-hidden="true" data-tauri-drag-region></span>
+      <span class="titlebar__name" data-tauri-drag-region>LaTeX Floater</span>
     </div>
     <div class="titlebar__controls">
       <button id="btn-theme" class="titlebar__btn" title="Toggle light/dark theme">
@@ -56,10 +69,21 @@
        editor that behaves exactly like Symbolab's input.
        ================================================================= -->
   <section class="editor">
-    <span id="mf" class="editor__field"></span>
-    <button id="btn-clear" class="editor__clear" title="Clear (Esc)">
-      <svg viewBox="0 0 16 16" width="12" height="12" fill="currentColor" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
-    </button>
+    <!-- Committed expressions stack up here, newest nearest the field and
+         older ones dimmer, and the whole stack scrolls once it outgrows the
+         space. app.js fills #history-list; the wrapper is the scroll box. -->
+    <div class="editor__history" id="history">
+      <div class="editor__history-list" id="history-list"></div>
+    </div>
+    <div class="editor__row">
+      <span id="mf" class="editor__field"></span>
+      <button id="btn-clear" class="editor__clear" title="Clear (Esc)">
+        <svg viewBox="0 0 16 16" width="12" height="12" fill="currentColor" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+      </button>
+    </div>
+    <!-- Empty twin of the history box, so the row stays at the vertical
+         centre no matter how the window is sized. -->
+    <div class="editor__below"></div>
   </section>
 
   <!-- =================================================================
@@ -72,7 +96,7 @@
   </section>
 
   <!-- =================================================================
-       Action row. Copy LaTeX is primary; MathML and PNG are secondary.
+       Action row. Copy LaTeX is primary; PNG is the fallback.
        ================================================================= -->
   <footer class="actions">
     <button id="copy-latex"  class="btn btn--primary">Copy LaTeX</button>
@@ -80,8 +104,10 @@
     <div class="actions__status" id="status" aria-live="polite"></div>
   </footer>
 
-  <script src="../node_modules/jquery/dist/jquery.min.js"></script>
-  <script src="../node_modules/mathquill/build/mathquill.min.js"></script>
-<script src="app.js"></script>
+  <script src="vendor/jquery.min.js"></script>
+  <script src="vendor/mathquill.min.js"></script>
+  <!-- bridge.js defines window.floater; app.js is written against it. -->
+  <script src="bridge.js"></script>
+  <script src="app.js"></script>
 </body>
 </html>
