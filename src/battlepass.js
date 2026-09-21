@@ -59,8 +59,13 @@
 
   let xp = parseInt(localStorage.getItem('bpXp') || '0', 10) || 0;
   let lastAwarded = localStorage.getItem('bpLast') || '';
-  let open = localStorage.getItem('bpOpen') === 'true';
-  let grown = parseInt(localStorage.getItem('bpGrown') || '0', 10) || 0;
+  // Always starts collapsed: unlike the graph, the pass isn't something you
+  // work in, so a relaunch shouldn't bring it back up. Any window growth
+  // from a previous session is simply kept as the window's size.
+  let open = false;
+  let grown = 0;
+  localStorage.setItem('bpOpen', 'false');
+  localStorage.setItem('bpGrown', '0');
 
   function levelInfo() {
     let level = 1, into = xp;
@@ -389,7 +394,7 @@
   buildTrack();
   render();
   applyLayout(open);
-  if (open) setOpen(true);
+
 
   window.BattlePass = { award, xpFor, levelInfo, coins, isUnlocked, setOpen, isOpen: () => open, trackHeight: PASS_HEIGHT };
 })();
