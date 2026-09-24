@@ -9,12 +9,12 @@ A small always-on-top desktop window for writing LaTeX fast. Type directly into 
 - Typed shorthand substitution: lowercase Greek names like `alpha` and `theta`, plus `sqrt`, `int`, `sum` and `prod`, convert as soon as you finish typing them; `inf` and uppercase Greek names like `Gamma` substitute when you press Space
 - Live LaTeX source readout under the editor, click it to copy instantly
 - Closed expressions show their value in the corner of the field as you type, including definite integrals, sums and products, e.g. `\int_\pi^{2\pi} \sin x\,dx` shows `= -2`
-- Expression history — step back through your last 20 expressions with `Alt+Up` / `Alt+Down`
+- Expression history for the current session only — step back through your last 20 expressions with `Alt+Up` / `Alt+Down`, or click the clock icon in the titlebar to slide out a panel of them. It starts hidden, and nothing is kept once you close the app
 - Two output formats:
   - **Copy LaTeX** — for Overleaf, Obsidian, Notion (`$$...$$`), Jupyter, GitHub, Markdown, Discord
   - **PNG** — for Google Docs, email, Slack, PowerPoint, or anywhere else without math rendering
 - Light/dark theme toggle, an opacity slider, and font-size controls in the titlebar
-- A grapher: the chevron on the bar under the field expands a Desmos-style plot of the current expression. It handles `y = f(x)`, `x = g(y)`, bare expressions in `x`, and implicit equations like `x^2+y^2=4`. Drag to pan, scroll to zoom, double-click to reset. Axis intercepts, maxima and minima, leftmost/rightmost points and self-intersections are marked; hover a point for its coordinates, or click anywhere on the curve to read it there and drag to slide along it
+- A grapher: click the bar under the field to expand a Desmos-style plot of the current expression. It handles `y = f(x)`, `x = g(y)`, bare expressions in `x`, and implicit equations like `x^2+y^2=4`. Drag to pan, scroll to zoom, double-click to reset. Axis intercepts, maxima and minima, leftmost/rightmost points and self-intersections are marked; hover a point for its coordinates, or click anywhere on the curve to read it there and drag to slide along it
 - A battle pass. Yes. Every expression you copy or clear earns XP (more for longer, more for integrals and fractions), fifty levels, a theme unlocked every five levels — Gold at 50 — and LaTeX coins in between. Pick unlocked themes from the paint-brush menu in the titlebar (every theme has a light and a dark mode, and the sun/moon button switches between them); the coins are displayed next to it and do nothing, which is the joke. If you just want to see the themes, Ctrl+Shift+Alt+L maxes the pass and Ctrl+Shift+Alt+R resets it
 - Global hotkey `Ctrl+Alt+L` (`Cmd+Alt+L` on macOS) summons and focuses the window from any application
 - Keyboard shortcuts: `Ctrl+Enter` copy LaTeX, `Esc` copy and clear, `Alt+Up`/`Alt+Down` browse history
@@ -47,7 +47,7 @@ The first `npm run dev` or `npm run build` compiles the Rust side, which takes a
 - **Typing LaTeX directly**: start a command with `\` and MathQuill converts as you type. Try `\frac`, `\sqrt`, `\alpha`, etc.
 - **Sub/super**: `_` and `^` work like in a LaTeX source file, and the caret stays inside the structure until you explicitly move out of it (press Tab or the arrow keys), matching Symbolab's feel.
 - **Shorthand words**: type a bare word from the shorthand list (see `SHORTHANDS` in `src/app.js`) and press Space to substitute it for the matching LaTeX command.
-- **History**: `Alt+Up` steps to older expressions, `Alt+Down` steps back toward your current draft.
+- **History**: `Alt+Up` steps to older expressions from this session, `Alt+Down` steps back toward your current draft. The clock button in the titlebar slides the panel of past expressions in and out.
 - **PNG export** renders the expression with real TeX glyphs (via MathJax) on a white background at twice the editor's font size, so it stays crisp when pasted somewhere that scales it up. The first export in a session takes a moment longer while MathJax loads.
 
 ## File layout

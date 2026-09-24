@@ -61,6 +61,10 @@
       <input  id="opacity-slider" class="titlebar__opacity" type="range" min="20" max="100" value="100" step="5" title="Window opacity">
       <button id="btn-font-dec" class="titlebar__btn titlebar__btn--font" title="Decrease font size">A−</button>
       <button id="btn-font-inc" class="titlebar__btn titlebar__btn--font" title="Increase font size">A+</button>
+      <!-- Slides the history panel (in .editor, see below) in and out. -->
+      <button id="history-toggle" class="titlebar__btn titlebar__btn--history" title="Show history">
+        <svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="8" cy="8" r="6"/><path d="M8 4.5V8l2.5 1.5"/></svg>
+      </button>
       <button id="btn-pin"      class="titlebar__btn titlebar__btn--pin" title="Toggle always-on-top">
         <!-- pin icon -->
         <svg viewBox="0 0 16 16" width="12" height="12" fill="currentColor" aria-hidden="true">
@@ -81,10 +85,14 @@
        editor that behaves exactly like Symbolab's input.
        ================================================================= -->
   <section class="editor">
-    <!-- Committed expressions stack up here, newest nearest the field and
-         older ones dimmer, and the whole stack scrolls once it outgrows the
-         space. app.js fills #history-list; the wrapper is the scroll box. -->
-    <div class="editor__history" id="history">
+    <!-- A pop-out side panel (styles.css), not part of the field's layout —
+         slides in from the editor's right edge over whatever's there rather
+         than reserving space when hidden, toggled by #history-toggle in the
+         titlebar above. Committed expressions stack up here, newest nearest
+         the bottom and older ones dimmer, scrolling once the list outgrows
+         the panel. app.js fills #history-list; the wrapper is both the
+         sliding panel and the scroll box. -->
+    <div class="editor__history is-hidden" id="history">
       <div class="editor__history-list" id="history-list"></div>
     </div>
     <div class="editor__row">
@@ -96,12 +104,13 @@
         <svg viewBox="0 0 16 16" width="12" height="12" fill="currentColor" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
       </button>
     </div>
-    <!-- The grapher. Its bar sits under the field at all times; the chevron
-         expands and collapses the plot below it (collapsed by default).
-         Collapsed, field and bar sit at the bottom of the editor area and
-         the history gets everything above; expanded, the plot and the
-         history split the space equally so the field ends up centred.
-         Everything inside is driven by graph.js. -->
+    <!-- The grapher. Its bar sits under the field at all times; clicking the
+         bar (app.js, not just the chevron) expands and collapses the plot
+         below it (collapsed by default) — except the reset button, which
+         only resets the view. Collapsed, field and bar sit at the bottom of
+         the editor area and the history gets everything above; expanded,
+         the plot and the history split the space equally so the field ends
+         up centred. Everything inside the plot itself is driven by graph.js. -->
     <div class="graph is-collapsed" id="graph">
       <div class="graph__bar">
         <span class="graph__status" id="graph-status">Graph</span>
@@ -141,8 +150,9 @@
 
   <!-- =================================================================
        The battle pass. A gag a friend asked for; see battlepass.js. The
-       window's bottom strip: a bar in the same shape as the graph's, with
-       the chevron expanding the reward track below it. Collapsed by default.
+       window's bottom strip: a bar in the same shape as the graph's, and
+       like the graph's, clicking anywhere on the bar (not just the chevron)
+       expands the reward track below it. Collapsed by default.
        ================================================================= -->
   <section class="pass is-collapsed" id="pass">
     <div class="pass__bar">

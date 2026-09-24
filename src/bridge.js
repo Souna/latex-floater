@@ -44,11 +44,13 @@ window.floater = {
 
   setOpacity: (value) => invoke('set_opacity', { value }),
 
-  // Grow or shrink the window height by `deltaPx` CSS pixels, width kept.
-  // Used when the graph panel expands in a window too short to hold it.
-  // A window sitting low on the screen would grow straight off the bottom,
-  // so after growing, the window is nudged up as far as needed to keep its
-  // bottom edge inside the monitor's work area (above the taskbar/dock).
+  // Grow the window height by `deltaPx` CSS pixels, width kept. Used only to
+  // grow (app.js restores the exact pre-grow size via restoreBounds below,
+  // rather than calling this with a negative delta — see the comment there
+  // for why). A window sitting low on the screen would grow straight off
+  // the bottom, so after growing, the window is nudged up as far as needed
+  // to keep its bottom edge inside the monitor's work area (above the
+  // taskbar/dock).
   resizeBy: async (deltaPx) => {
     const { LogicalSize, LogicalPosition, currentMonitor } = window.__TAURI__.window;
     const scale = await appWindow.scaleFactor();
@@ -64,6 +66,38 @@ window.floater = {
     const outer = (await appWindow.outerSize()).toLogical(scale);
     const overflow = pos.y + outer.height - areaBottom;
     if (overflow > 0) await appWindow.setPosition(new LogicalPosition(pos.x, Math.max(areaTop, pos.y - overflow)));
+  },
+
+  // Reads the window's current outer Y position and inner height, in CSS
+  // pixels — a snapshot taken right before growing it (ensureGraphRoom() /
+  // battlepass.js's setOpen()), to be handed back to restoreBounds() later.
+  getBounds: async () => {
+    const scale = await appWindow.scaleFactor();
+    return {
+      y: (await appWindow.outerPosition()).toLogical(scale).y,
+      height: (await appWindow.innerSize()).toLogical(scale).height
+    };
+  },
+
+  // Sets the window back to an exact {y, height} snapshot from getBounds().
+  // Closing a panel used to call resizeBy(-<the amount it grew by>) — grow
+  // by X, later shrink by the same X, which sounds exact but isn't: each
+  // call re-reads the window's *current* size and asks the OS for size+X,
+  // and the OS can only land on a whole physical pixel, so at a non-100%
+  // display scale (175%, say) the logical height read back after growing
+  // isn't always bit-for-bit what growing by X from the original should
+  // give — shrinking by X afterward then doesn't quite land back on the
+  // original either. Restoring an exact remembered value sidesteps that
+  // entirely: there's no arithmetic on an already-rounded live size, just
+  // "set it to this," so however many times a panel opens and closes the
+  // window always ends up pixel-identical to before the first one grew it.
+  restoreBounds: async ({ y, height }) => {
+    const { LogicalSize, LogicalPosition } = window.__TAURI__.window;
+    const scale = await appWindow.scaleFactor();
+    const width = (await appWindow.innerSize()).toLogical(scale).width;
+    await appWindow.setSize(new LogicalSize(width, height));
+    const x = (await appWindow.outerPosition()).toLogical(scale).x;
+    await appWindow.setPosition(new LogicalPosition(x, y));
   },
 
   // Lower bound on the window height in CSS pixels (width stays 480).

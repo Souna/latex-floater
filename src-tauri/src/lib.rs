@@ -9,11 +9,16 @@
 // nothing native needs to know about it.
 
 use base64::Engine;
-use tauri::{AppHandle, Manager, WebviewWindow};
+use tauri::{AppHandle, LogicalSize, Manager, WebviewWindow};
 use tauri_plugin_clipboard_manager::ClipboardExt;
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, ShortcutState};
 
 const SUMMON_HOTKEY: &str = "CmdOrCtrl+Alt+L";
+
+// Must match minWidth/minHeight (and the default width/height) in
+// tauri.conf.json.
+const MIN_WIDTH: f64 = 480.0;
+const MIN_HEIGHT: f64 = 280.0;
 
 // Plain text to the system clipboard — the LaTeX source.
 #[tauri::command]
@@ -106,6 +111,30 @@ pub fn run() {
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .setup(|app| {
+            // tauri-plugin-window-state has already restored the saved size
+            // by this point, but it restores whatever was saved with no
+            // regard for minWidth/minHeight in tauri.conf.json — normally a
+            // non-issue, since the OS enforces that minimum during an
+            // interactive drag-resize, but at least PowerToys' Grab and Move
+            // resizes windows through an API that bypasses that check
+            // entirely, and a size that small can then get saved and keep
+            // coming back on every future launch. Clamp each dimension up to
+            // the minimum independently (so an otherwise-fine 900x200 becomes
+            // 900x280, not 480x280) before the window is ever shown — it's
+            // created with "visible": false in tauri.conf.json specifically
+            // so this can run first, with no flash of the wrong size.
+            if let Some(window) = app.get_webview_window("main") {
+                if let (Ok(scale), Ok(size)) = (window.scale_factor(), window.inner_size()) {
+                    let logical = size.to_logical::<f64>(scale);
+                    let width = logical.width.max(MIN_WIDTH);
+                    let height = logical.height.max(MIN_HEIGHT);
+                    if width > logical.width || height > logical.height {
+                        let _ = window.set_size(LogicalSize::new(width, height));
+                    }
+                }
+                let _ = window.show();
+            }
+
             // Registered here rather than via with_shortcuts() so that a
             // hotkey another app already owns degrades to "no hotkey"
             // instead of refusing to start at all.

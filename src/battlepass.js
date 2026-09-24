@@ -24,7 +24,6 @@
                          30: 'blueprint', 35: 'rose', 40: 'terminal', 45: 'ocean', 50: 'gold' };
   const UNIQUE_LEVELS = new Set([10, 20, 30, 40]);
   const PASS_HEIGHT = 156;      // expanded track height, css px (matches .pass__track-wrap)
-  const PASS_ROOM = 60;         // history to keep visible when the pass grows the window
 
   // XP needed to go from level L to L+1: 16,250 in total, so roughly 300
   // typical formulas to reach 50 — a few weeks of real use, not an evening.
@@ -61,11 +60,13 @@
   let lastAwarded = localStorage.getItem('bpLast') || '';
   // Always starts collapsed: unlike the graph, the pass isn't something you
   // work in, so a relaunch shouldn't bring it back up. Any window growth
-  // from a previous session is simply kept as the window's size.
+  // from a previous session is simply kept as the window's size — so unlike
+  // the graph's graphPreGrowBounds (app.js), preGrowBounds here is
+  // in-memory only, nothing to persist across a relaunch that always starts
+  // with the track collapsed anyway.
   let open = false;
-  let grown = 0;
+  let preGrowBounds = null;
   localStorage.setItem('bpOpen', 'false');
-  localStorage.setItem('bpGrown', '0');
 
   function levelInfo() {
     let level = 1, into = xp;
@@ -282,11 +283,24 @@
     if (node) trackWrap.scrollLeft = node.offsetLeft - trackWrap.clientWidth / 2 + node.offsetWidth / 2;
   }
 
-  // The track's height comes out of the editor area (the history box, in
-  // practice). Like the graph, if the editor can't spare it the window grows
-  // by the shortfall, which is given back on collapse; and while the track
-  // is open the window's minimum height includes it (updateMinHeight in
-  // app.js), so it can't be shrunk out of view.
+  // The track's height comes out of the editor area. Like the graph, if the
+  // editor can't spare it the window grows by exactly the shortfall — no
+  // extra margin. An earlier version added a fixed 60px on top (PASS_ROOM,
+  // "history to keep visible") from back when history lived in the editor's
+  // own flex stack and could get squeezed to nothing; now that history is
+  // an absolutely-positioned overlay that never takes flex space (see
+  // above), that reservation protected nothing and just grew the window
+  // 60px more than the track needed, which nothing consumed — the extra
+  // 60px stretched the editor's own flex:1 box instead, showing up as a
+  // dead gap between the graph bar and the action row below it. Restored
+  // exactly on collapse via preGrowBounds (see graphPreGrowBounds in app.js
+  // and restoreBounds() in bridge.js for why an exact remembered {y,height}
+  // is used instead of reversing the grow arithmetically); and while the
+  // track is open the window's minimum height includes it (updateMinHeight
+  // in app.js), so it can't be shrunk out of view. .editor__history is
+  // skipped when measuring "others" because it's an absolutely-positioned
+  // overlay (styles.css) — its offsetHeight would otherwise read as the
+  // whole editor's height, not the 0 it actually takes from this layout.
   async function setOpen(isOpen) {
     open = isOpen;
     localStorage.setItem('bpOpen', isOpen);
@@ -297,24 +311,25 @@
         if (el.classList.contains('editor__history')) continue;
         others += el.offsetHeight + 8;
       }
-      const spare = editorEl.clientHeight - 16 - others;   // what the history box has now
-      const need = PASS_HEIGHT - (spare - PASS_ROOM);
+      const spare = editorEl.clientHeight - 16 - others;
+      const need = PASS_HEIGHT - spare;
       if (need > 0) {
-        grown += need;
-        localStorage.setItem('bpGrown', grown);
+        if (!preGrowBounds) preGrowBounds = await window.floater.getBounds();
         await window.floater.resizeBy(need);
       }
       scrollToCurrent();
-    } else if (grown > 0) {
-      const delta = grown;
-      grown = 0;
-      localStorage.setItem('bpGrown', 0);
-      await window.floater.resizeBy(-delta);
+    } else if (preGrowBounds) {
+      await window.floater.restoreBounds(preGrowBounds);
+      preGrowBounds = null;
     }
     if (window.updateMinHeight) await window.updateMinHeight();
   }
 
-  toggleBtn.addEventListener('click', () => setOpen(!open));
+  // Whole bar toggles the panel, matching the graph panel's bar. Nothing else
+  // in it is a separate click target (unlike the graph's reset button), so
+  // no exclusion needed; toggleBtn itself is inside bar and still works via
+  // bubbling, including keyboard-Enter activation.
+  bar.addEventListener('click', () => setOpen(!open));
 
   // --------------------------------------------------------- theme menu
 

@@ -25,22 +25,22 @@ const MQ = MathQuill.getInterface(2);
 const mqEl = document.getElementById('mf');
 
 // ---------------------------------------------------------------------------
-// History — last 20 expressions, navigated with Alt+Up / Alt+Down.
+// History — last 20 expressions of THIS session, navigated with Alt+Up / Alt+Down.
+//
+// Deliberately in memory only: it starts empty at every launch and is gone
+// when the app closes. It used to live in localStorage, which showed the
+// previous sessions' expressions on the next launch. (Named sessionHistory
+// because a top-level `history` would collide with window.history.)
 // ---------------------------------------------------------------------------
 
 const HISTORY_MAX = 20;
-
-function loadHistory() {
-  try { return JSON.parse(localStorage.getItem('history') || '[]'); }
-  catch { return []; }
-}
+const sessionHistory = [];
 
 function saveToHistory(latex) {
   if (!latex.trim()) return;
-  const history = loadHistory();
-  if (history[0] === latex) return;   // don't duplicate consecutive entries
-  history.unshift(latex);
-  localStorage.setItem('history', JSON.stringify(history.slice(0, HISTORY_MAX)));
+  if (sessionHistory[0] === latex) return;   // don't duplicate consecutive entries
+  sessionHistory.unshift(latex);
+  sessionHistory.length = Math.min(sessionHistory.length, HISTORY_MAX);
   renderHistory();
   // The battle pass counts exactly what the history does: a committed expression.
   window.BattlePass.award(latex);
@@ -54,12 +54,11 @@ let navigating   = false; // prevents edit handler from resetting historyIndex m
 // was typing before they started browsing). Shared by Alt+Up/Down and by
 // clicking an entry in the visible stack.
 function showHistoryEntry(index) {
-  const history = loadHistory();
   if (historyIndex === -1 && index !== -1) historyDraft = mf.latex();
   historyIndex = index;
 
   navigating = true;
-  mf.latex(index === -1 ? historyDraft : history[index]);
+  mf.latex(index === -1 ? historyDraft : sessionHistory[index]);
   navigating = false;
   updateSource();
   markActiveHistory();
@@ -68,10 +67,9 @@ function showHistoryEntry(index) {
 }
 
 function navigateHistory(direction) {
-  const history = loadHistory();
-  if (history.length === 0) return;
+  if (sessionHistory.length === 0) return;
   if (direction === 'up') {
-    if (historyIndex < history.length - 1) showHistoryEntry(historyIndex + 1);
+    if (historyIndex < sessionHistory.length - 1) showHistoryEntry(historyIndex + 1);
   } else if (historyIndex !== -1) {
     showHistoryEntry(historyIndex - 1);
   }
@@ -96,15 +94,17 @@ const mf = MQ.MathField(mqEl, {
 });
 
 // ---------------------------------------------------------------------------
-// The visible history stack.
+// The history panel.
 //
 // Every committed expression (copied or cleared) is rendered as static math
-// above the field, newest nearest the field, each older one a little dimmer,
-// so the last few things you wrote stay in view without taking focus away
-// from the input. Clicking one loads it into the field; Alt+Up/Down walks the
-// same list and highlights where it is. The stack is rebuilt in full whenever
-// history changes — at most 20 small static renders, cheap enough that
-// incremental DOM surgery isn't worth its complexity.
+// in a side panel (#history, styled and positioned in styles.css as a
+// pop-out that slides in over the editor's right edge rather than living in
+// the field's own layout), newest nearest the toggle, each older one a
+// little dimmer. Clicking one loads it into the field; Alt+Up/Down walks the
+// same list and highlights where it is, whether or not the panel is
+// currently slid out. The stack is rebuilt in full whenever history changes
+// — at most 20 small static renders, cheap enough that incremental DOM
+// surgery isn't worth its complexity.
 // ---------------------------------------------------------------------------
 
 const historyBox  = document.getElementById('history');
@@ -115,10 +115,10 @@ function historyOpacity(index) {
 }
 
 function renderHistory() {
-  const history = loadHistory();
   historyList.textContent = '';
-  // Oldest first in the DOM so the newest ends up directly above the field.
-  for (let i = history.length - 1; i >= 0; i--) {
+  // Oldest first in the DOM so the newest ends up at the bottom of the
+  // panel, nearest the toggle that opens it.
+  for (let i = sessionHistory.length - 1; i >= 0; i--) {
     const item = document.createElement('button');
     item.type = 'button';
     item.className = 'history__item';
@@ -128,11 +128,29 @@ function renderHistory() {
     if (i === historyIndex) item.classList.add('is-active');
     const math = document.createElement('span');
     item.appendChild(math);
-    MQ.StaticMath(math).latex(history[i]);
+    MQ.StaticMath(math).latex(sessionHistory[i]);
     historyList.appendChild(item);
   }
   historyBox.scrollTop = historyBox.scrollHeight;
 }
+
+// Slide the panel in/out. It starts hidden every launch (like the battle
+// pass track, the choice isn't remembered) and, being an overlay
+// (styles.css), never affects the field's position or the graph/battle-pass
+// window-growth maths either way. Alt+Up/Down still work while it's hidden.
+const historyToggle = document.getElementById('history-toggle');
+
+function setHistoryShown(shown) {
+  historyBox.classList.toggle('is-hidden', !shown);
+  historyToggle.classList.toggle('is-active', shown);
+  historyToggle.title = shown ? 'Hide history' : 'Show history';
+}
+
+historyToggle.addEventListener('click', () => {
+  setHistoryShown(historyBox.classList.contains('is-hidden'));
+  mf.focus();
+});
+setHistoryShown(false);
 
 function markActiveHistory() {
   for (const item of historyList.children) {
@@ -356,21 +374,35 @@ document.addEventListener('keydown', (e) => {
 
   // Ctrl+Backspace used to fall through to MathQuill's default handling,
   // which just deletes one character like a plain Backspace. Route it to the
-  // same "wipe the whole expression" behavior as Esc.
-  if (mod && e.key === 'Backspace') { e.preventDefault(); clearField(); return; }
+  // same "wipe the whole expression" behavior as Esc. stopPropagation matters
+  // here for the same reason it does on Tab just below: this listener is on
+  // document in the capture phase, so without it the same keydown goes on to
+  // reach MathQuill's own handler on the field afterward and gets handled a
+  // second time — harmless here today (backspacing an already-empty field is
+  // a no-op) but the same latent double-handling bug, so closed off too.
+  if (mod && e.key === 'Backspace') { e.preventDefault(); e.stopPropagation(); clearField(); return; }
 
   // Mirror the A-/A+ buttons so font size can be scaled from the keyboard too.
   if (mod && (e.key === '-' || e.key === '_')) { e.preventDefault(); decreaseFontSize(); return; }
   if (mod && (e.key === '=' || e.key === '+')) { e.preventDefault(); increaseFontSize(); return; }
 
-  // MathQuill treats Tab as "leave the current block" (e.g. numerator ->
-  // denominator); once there's nowhere left to go, it stops handling the key
-  // and the browser's default tab-to-next-focusable-element kicks in,
-  // sending focus to whatever's next in the DOM (the clear button). Keep Tab
-  // scoped to the math field always by feeding it to MathQuill as a no-op
-  // when there's nothing to navigate to, instead of letting it escape.
+  // MathQuill treats Tab as "go one block right if it exists, else escape
+  // right" — e.g. numerator -> denominator, then out of the fraction — which
+  // is exactly what we want, so mf.keystroke() below just delegates to it.
+  // But without stopPropagation, this capture-phase listener doesn't stop
+  // the same keydown from also reaching MathQuill's own handler on the field
+  // afterward: it fires there too and moves a second block over, so Tab at
+  // the end of a numerator skipped the denominator and landed after the
+  // whole fraction (confirmed directly — MathQuill's own Tab handling was
+  // never wrong, this listener was just triggering it twice). Also still
+  // needed for its original purpose: once there's nowhere left to go,
+  // MathQuill stops handling Tab and the browser's default
+  // tab-to-next-focusable-element kicks in, sending focus to whatever's next
+  // in the DOM (the clear button) — mf.keystroke() as a no-op there keeps
+  // Tab scoped to the math field always.
   if (!mod && !e.altKey && e.key === 'Tab') {
     e.preventDefault();
+    e.stopPropagation();
     mf.keystroke(e.shiftKey ? 'Shift-Tab' : 'Tab');
     return;
   }
@@ -404,16 +436,16 @@ document.addEventListener('wheel', (e) => {
 // Grapher panel.
 //
 // The graph's bar sits under the field permanently; its chevron expands the
-// plot below it. Collapsed, the field and bar sit at the bottom of the
-// editor area with the history above; expanded, the plot and the history
-// share the space equally, so the field moves up to the centre. The plot
-// needs real height to be useful (and so, by symmetry, does the history
-// above it) and the default window is short, so expanding grows the window
-// by whatever the editor area is missing, and collapsing gives that back. The amount grown
-// is remembered in localStorage alongside the open state, so a relaunch
-// that restores the (taller) window with the graph open still knows how
-// much to shrink on collapse. graph.js owns everything inside the panel;
-// this is just the plumbing around it.
+// plot below it. Collapsed, the field and bar sit at the top of the editor
+// area (history is a side panel now, not part of this layout — see
+// styles.css); expanded, the plot takes the rest of the editor's height.
+// The plot needs real height to be useful and the default window is short,
+// so expanding grows the window by whatever the editor area is missing, and
+// collapsing gives that back — graphPreGrowBounds is the window's exact
+// {y, height} from just before it grew, remembered in localStorage
+// alongside the open state so a relaunch that restores the (taller) window
+// with the graph open still knows what to restore on collapse. graph.js
+// owns everything inside the panel; this is just the plumbing around it.
 // ---------------------------------------------------------------------------
 
 const GRAPH_HEIGHT = 220;   // comfortable plot height the window is grown to provide
@@ -427,8 +459,12 @@ const graphStatus = document.getElementById('graph-status');
 const editorEl    = document.querySelector('.editor');
 const editorRow   = document.querySelector('.editor__row');
 
-let graphOpen  = localStorage.getItem('graphOpen') === 'true';
-let graphGrown = parseInt(localStorage.getItem('graphGrown') || '0', 10) || 0;
+let graphOpen = localStorage.getItem('graphOpen') === 'true';
+
+// {y, height} the window had just before the graph last grew it, or null if
+// it isn't currently grown — see restoreBounds() in bridge.js for why this
+// is a remembered absolute snapshot rather than a delta to reverse.
+let graphPreGrowBounds = JSON.parse(localStorage.getItem('graphPreGrowBounds') || 'null');
 
 // Everything visual about expanded vs collapsed, with no window resizing.
 function applyGraphLayout(open) {
@@ -441,33 +477,50 @@ function applyGraphLayout(open) {
 }
 
 // Grows the window until the editor area can hold the plot at its minimum
-// height plus an equal-height history box above the field. Normally runs
-// once, when the graph is first expanded; it also runs at boot when the
-// graph was left open, which is a no-op when the window-state plugin has
-// restored the grown window, and a rescue when it hasn't (a crash, or the
-// app killed before the plugin could save).
+// height. Normally runs once, when the graph is first expanded; it also
+// runs at boot when the graph was left open, which is a no-op when the
+// window-state plugin has restored the grown window, and a rescue when it
+// hasn't (a crash, or the app killed before the plugin could save). Only
+// snapshots graphPreGrowBounds the first time (while it's still null) —
+// growing further on a later call (the editor area turned out to need even
+// more room) must not overwrite the original pre-grow size.
+//
+// Asks for exactly GRAPH_HEIGHT, not double it — an earlier version doubled
+// it for the same reason battlepass.js briefly had PASS_ROOM: history used
+// to live in the editor's own flex stack and shared its spare height
+// equally with the graph, so growing enough for a comfortable plot meant
+// growing enough for two. History is an absolutely-positioned overlay now
+// (see the history panel comment above) and doesn't compete for that space
+// at all, so the graph gets all of the editor's spare height to itself —
+// doubling this would just over-grow the window and enforce a taller
+// minimum than the plot actually needs, the same bug PASS_ROOM had, just
+// not visible here the same way since the graph is flex:1 and simply
+// absorbs whatever extra room it's given as a bigger plot, rather than
+// leaving it as an unclaimed gap the way the pass's fixed-height track did.
 async function ensureGraphRoom() {
   const available = editorEl.clientHeight - editorRow.offsetHeight - 16 - 8;
-  const need = 2 * GRAPH_HEIGHT - available;
+  const need = GRAPH_HEIGHT - available;
   if (need <= 0) return;
-  graphGrown += need;
-  localStorage.setItem('graphGrown', graphGrown);
+  if (!graphPreGrowBounds) {
+    graphPreGrowBounds = await window.floater.getBounds();
+    localStorage.setItem('graphPreGrowBounds', JSON.stringify(graphPreGrowBounds));
+  }
   await window.floater.resizeBy(need);
 }
 
 // The window may not be shrunk below what the open panels need. With the
-// graph expanded that is plot and history each at the plot's minimum, plus
-// the field row and everything outside the editor area ("chrome", which
-// includes the battle pass track when that is open); otherwise the panel
-// would overflow the editor area and hide the bars below it. With only the
-// battle pass open it is the normal minimum plus the track. Both panels
-// call this when they toggle.
+// graph expanded that is the plot at its minimum, plus the field row and
+// everything outside the editor area ("chrome", which includes the battle
+// pass track when that is open); otherwise the panel would overflow the
+// editor area and hide the bars below it. With only the battle pass open it
+// is the normal minimum plus the track. Both panels call this when they
+// toggle.
 function updateMinHeight() {
   const pass = window.BattlePass;
   let min = 280 + (pass.isOpen() ? pass.trackHeight : 0);
   if (graphOpen) {
     const chrome = window.innerHeight - editorEl.clientHeight;
-    min = Math.max(min, chrome + editorRow.offsetHeight + 24 + 2 * GRAPH_MIN);
+    min = Math.max(min, chrome + editorRow.offsetHeight + 24 + GRAPH_MIN);
   }
   return window.floater.setMinHeight(Math.ceil(min));
 }
@@ -485,17 +538,23 @@ async function setGraphOpen(open) {
     window.Grapher.setLatex(mf.latex() || '');
   } else {
     await updateMinHeight();
-    if (graphGrown > 0) {
-      const delta = graphGrown;
-      graphGrown = 0;
-      localStorage.setItem('graphGrown', 0);
-      await window.floater.resizeBy(-delta);
+    if (graphPreGrowBounds) {
+      await window.floater.restoreBounds(graphPreGrowBounds);
+      graphPreGrowBounds = null;
+      localStorage.removeItem('graphPreGrowBounds');
     }
   }
   mf.focus();
 }
 
-graphToggle.addEventListener('click', () => setGraphOpen(!graphOpen));
+// The whole bar toggles the panel, not just the chevron — except the reset
+// button, which keeps its own single-purpose click. graphToggle itself is
+// inside the bar, so a click or keyboard-Enter on it still reaches this
+// listener via bubbling; it doesn't need (or have) a handler of its own.
+document.querySelector('.graph__bar').addEventListener('click', (e) => {
+  if (e.target.closest('#graph-reset')) return;
+  setGraphOpen(!graphOpen);
+});
 
 // ---------------------------------------------------------------------------
 // Themes. The palettes and the mechanics of applying one live in themes.js;
@@ -587,12 +646,12 @@ document.getElementById('btn-font-dec').addEventListener('click', decreaseFontSi
 // ---------------------------------------------------------------------------
 
 applyFontSize();
-renderHistory();
 window.floater.setOpacity(parseFloat(localStorage.getItem('opacity') || '1'));
 updateSource();
 // Restore the panel. The window-state plugin normally brings back the
-// taller window, so ensureGraphRoom() finds nothing to do; graphGrown
-// remembers what to give back on collapse either way.
+// taller window, so ensureGraphRoom() finds nothing to do; graphPreGrowBounds
+// (loaded from localStorage above) remembers what to restore on collapse
+// either way.
 applyGraphLayout(graphOpen);
 if (graphOpen) {
   ensureGraphRoom().then(updateMinHeight).then(() => {

@@ -164,7 +164,8 @@ body {
 }
 .titlebar__btn:hover         { background: var(--bg-hover); color: var(--fg); }
 .titlebar__btn--close:hover  { background: var(--danger-bg); color: var(--danger); }
-.titlebar__btn--pin.is-active { color: var(--accent); }
+.titlebar__btn--pin.is-active     { color: var(--accent); }
+.titlebar__btn--history.is-active { color: var(--accent); }
 .titlebar__btn--font { width: auto; padding: 0 5px; font-size: 10px; font-family: inherit; }
 
 .titlebar__coins {
@@ -234,11 +235,14 @@ body {
    Math editor
    ========================================================================= */
 
-/* The editor section is a vertical stack: history above, the field row,
-   then the graph panel. With the graph collapsed to its bar, the history
-   box takes all the spare height and the field sits at the bottom; when
-   the graph is expanded it shares the spare height equally with the
-   history box, which puts the field at the vertical centre. */
+/* The editor's vertical stack is just the field row and the graph panel —
+   history isn't part of it (see .editor__history below), so with the graph
+   in its default collapsed state the field sits right at the top with
+   nothing claiming space above it. Expanding the graph gives it a flex:1
+   box, sharing the editor's spare height with... nothing else now, so it
+   just takes all of it, pushing the field up to sit above the plot rather
+   than centered — there's no longer a second flex:1 sibling to center
+   against, since history moved out of this stack entirely. */
 .editor {
   position: relative;
   flex: 1;
@@ -251,25 +255,51 @@ body {
   transition: background 0.15s;
   /* Whatever happens inside (a plot that wants more height than a small
      window has), it must never paint over the TeX bar and action row
-     below — canvas content otherwise draws above later siblings' backgrounds. */
+     below — canvas content otherwise draws above later siblings' backgrounds.
+     Also what clips the history panel below to the editor's own box, so it
+     doesn't need to know the titlebar's height to avoid drawing over it. */
   overflow: hidden;
 }
 
+/* History is a pop-out side panel, not part of the vertical stack above the
+   field — earlier versions tried keeping it there (as permanently visible,
+   then as a flex box that collapsed to zero height when hidden), but a
+   panel above the field either always cost vertical space or, once hidden
+   by default, left the field with nowhere fixed to sit. Positioned absolute
+   within .editor (already position:relative), covering its right edge
+   top-to-bottom, sliding in behind the toggle button (now in the titlebar,
+   #history-toggle in index.html) rather than pushing any other layout:
+   translateX(100%) off the right edge when hidden, 0 when shown. Because
+   it's absolutely positioned it never participates in .editor's flex column
+   at all, hidden or shown — nothing here affects where the field row or
+   graph panel sit. */
 .editor__history {
-  flex: 1 1 0;
-  min-height: 0;
-  overflow-y: auto;
-  scrollbar-width: none;
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 200px;
+  max-width: calc(100% - 40px);
   display: flex;
   flex-direction: column;
-  padding: 0 26px 0 0;
+  padding: 10px 10px 8px;
+  background: var(--bg-raise);
+  border-left: 1px solid var(--border);
+  box-shadow: -6px 0 16px rgba(0, 0, 0, 0.35);
+  overflow-y: auto;
+  scrollbar-width: none;
+  z-index: 5;
+  transform: translateX(100%);
+  transition: transform 0.16s ease;
 }
+.editor__history:not(.is-hidden) { transform: translateX(0); }
 .editor__history::-webkit-scrollbar { display: none; }
 
 /* margin-top:auto (rather than justify-content:flex-end on the scroll box)
    pins the list to the bottom while still letting the overflow at the top
    be scrolled to — flex-end alignment inside a scroll container makes the
-   overflowed part unreachable. */
+   overflowed part unreachable. Keeps the newest entry at the bottom, nearest
+   the titlebar toggle that reveals the panel. */
 .editor__history-list {
   margin-top: auto;
   display: flex;
@@ -356,7 +386,12 @@ body {
   font-size: 11px;
   color: var(--fg-dim);
   flex-shrink: 0;
+  cursor: pointer;
 }
+/* The bar itself is now the click target (app.js); the buttons inside it
+   already show their own hover, so this only needs to read as clickable
+   when the pointer is over the rest of the bar. */
+.graph__bar:hover { background: var(--bg-hover); }
 
 .graph__status {
   flex: 1;
@@ -512,7 +547,10 @@ body {
   font-size: 11px;
   color: var(--fg-dim);
   flex-shrink: 0;
+  cursor: pointer;
 }
+/* Matches .graph__bar:hover — same clickable-bar treatment. */
+.pass__bar:hover { background: var(--bg-hover); }
 .pass:not(.is-collapsed) .pass__bar { border-bottom: 1px solid var(--border); }
 .pass__title {
   font-size: 9px;
