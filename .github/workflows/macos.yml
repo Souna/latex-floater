@@ -1,0 +1,43 @@
+# Builds the macOS .dmg on a GitHub-hosted Mac, since a .dmg can't be
+# produced from Windows (it needs Apple's linker, codesign and hdiutil).
+# The build is a universal binary so the same .dmg runs on Apple Silicon
+# and Intel Macs. It's ad-hoc signed ("signingIdentity": "-" in
+# tauri.conf.json), not notarized: first launch still needs the Gatekeeper
+# override, but without the ad-hoc signature Apple Silicon reports the app
+# as "damaged" rather than offering one.
+name: macOS build
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main, mac-build]
+    paths-ignore: ['**.md']
+
+jobs:
+  build:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - run: npm ci
+
+      - run: npx tauri build --target universal-apple-darwin
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: latex-floater-macos
+          path: src-tauri/target/universal-apple-darwin/release/bundle/dmg/*.dmg
+          if-no-files-found: error
