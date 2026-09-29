@@ -1,6 +1,6 @@
 [package]
 name = "latex-floater"
-version = "0.2.0"
+version = "0.2.1"
 description = "A small always-on-top desktop window for writing LaTeX fast."
 edition = "2021"
 
